@@ -8,10 +8,32 @@ import { ListNavigator } from './components/navigation/ListNavigator';
 import { TaskNavigator } from './components/navigation/TaskNavigator';
 import { testPhase2Navigation } from './tests/phase2Test';
 import { testPhase2Cache } from './tests/cacheTest';
+// Phase 3 imports
+import { TaskDecorationProvider } from './components/decorations/TaskDecorationProvider';
+import { WebviewManager } from './webviews/WebviewManager';
+import { useDecorations } from './hooks/useDecorations';
+import { useTriggerDetection } from './hooks/useTriggerDetection';
+import { useTaskInsertion } from './hooks/useTaskInsertion';
+import { useInlineInteraction } from './hooks/useInlineInteraction';
 
 export function activate(context: vscode.ExtensionContext) {
   // Store context globally for hooks
   (global as any).extensionContext = context;
+  
+  // Initialize Phase 3 components
+  const decorationProvider = TaskDecorationProvider.getInstance(context);
+  const webviewManager = WebviewManager.getInstance(context);
+  const decorationHook = useDecorations(context);
+  const triggerHook = useTriggerDetection(context);
+  const insertionHook = useTaskInsertion(context);
+  const interactionHook = useInlineInteraction(context);
+  
+  // Store hooks globally for easy access
+  (global as any).decorationHook = decorationHook;
+  (global as any).triggerHook = triggerHook;
+  (global as any).insertionHook = insertionHook;
+  (global as any).interactionHook = interactionHook;
+
   // Register the URI Handler for OAuth2 redirect
   const uriHandler = vscode.window.registerUriHandler({
     handleUri: async (uri: vscode.Uri) => {
@@ -177,6 +199,140 @@ export function activate(context: vscode.ExtensionContext) {
     await testPhase2Cache(context);
   });
   context.subscriptions.push(testCacheCommand);
+  
+  // Phase 3 Commands - Inline Task Integration
+  const toggleDecorationsCommand = vscode.commands.registerCommand('clickuplink.toggleDecorations', () => {
+    decorationHook.toggleDecorations();
+    vscode.window.showInformationMessage(
+      decorationHook.isEnabled() ? 'Task decorations enabled' : 'Task decorations disabled'
+    );
+  });
+  context.subscriptions.push(toggleDecorationsCommand);
+  
+  const insertTaskCommand = vscode.commands.registerCommand('clickuplink.insertTask', async () => {
+    await checkAuth(context);
+    const auth = useAuth();
+    if (!auth.isAuthenticated) {
+      vscode.window.showInformationMessage('You need to log in to ClickUp first');
+      return;
+    }
+    
+    await insertionHook.insertAtCursor();
+  });
+  context.subscriptions.push(insertTaskCommand);
+  
+  const browseAndInsertCommand = vscode.commands.registerCommand('clickuplink.browseAndInsert', async () => {
+    await checkAuth(context);
+    const auth = useAuth();
+    if (!auth.isAuthenticated) {
+      vscode.window.showInformationMessage('You need to log in to ClickUp first');
+      return;
+    }
+    
+    await insertionHook.browseAndInsert();
+  });
+  context.subscriptions.push(browseAndInsertCommand);
+  
+  const quickInsertCommand = vscode.commands.registerCommand('clickuplink.quickInsert', async () => {
+    await checkAuth(context);
+    const auth = useAuth();
+    if (!auth.isAuthenticated) {
+      vscode.window.showInformationMessage('You need to log in to ClickUp first');
+      return;
+    }
+    
+    const query = await vscode.window.showInputBox({
+      prompt: 'Search for tasks to insert',
+      placeHolder: 'Type task name or keywords...'
+    });
+    
+    if (query) {
+      await insertionHook.quickInsert(query);
+    }
+  });
+  context.subscriptions.push(quickInsertCommand);
+  
+  const openTaskDetailsCommand = vscode.commands.registerCommand('clickuplink.openTaskDetails', async (taskId?: string) => {
+    if (!taskId) {
+      // Try to get task ID from current cursor position
+      const editor = vscode.window.activeTextEditor;
+      if (editor) {
+        const position = editor.selection.active;
+        const trigger = await triggerHook.detectAtPosition(editor.document, position);
+        if (trigger && trigger.taskId) {
+          taskId = trigger.taskId;
+        }
+      }
+    }
+    
+    if (taskId) {
+      await interactionHook.openTaskDetails(taskId);
+    } else {
+      vscode.window.showInformationMessage('No task found at cursor position');
+    }
+  });
+  context.subscriptions.push(openTaskDetailsCommand);
+  
+  const changeTaskStatusCommand = vscode.commands.registerCommand('clickuplink.changeTaskStatus', async (taskId?: string) => {
+    if (!taskId) {
+      // Try to get task ID from current cursor position
+      const editor = vscode.window.activeTextEditor;
+      if (editor) {
+        const position = editor.selection.active;
+        const trigger = await triggerHook.detectAtPosition(editor.document, position);
+        if (trigger && trigger.taskId) {
+          taskId = trigger.taskId;
+        }
+      }
+    }
+    
+    if (taskId) {
+      await interactionHook.handleStatusClick(taskId);
+    } else {
+      vscode.window.showInformationMessage('No task found at cursor position');
+    }
+  });
+  context.subscriptions.push(changeTaskStatusCommand);
+  
+  const showQuickActionsCommand = vscode.commands.registerCommand('clickuplink.showQuickActions', async (taskId?: string) => {
+    if (!taskId) {
+      // Try to get task ID from current cursor position
+      const editor = vscode.window.activeTextEditor;
+      if (editor) {
+        const position = editor.selection.active;
+        const trigger = await triggerHook.detectAtPosition(editor.document, position);
+        if (trigger && trigger.taskId) {
+          taskId = trigger.taskId;
+        }
+      }
+    }
+    
+    if (taskId) {
+      await interactionHook.showQuickActions(taskId);
+    } else {
+      await webviewManager.showQuickActions(); // Show general actions
+    }
+  });
+  context.subscriptions.push(showQuickActionsCommand);
+  
+  const refreshDecorationsCommand = vscode.commands.registerCommand('clickuplink.refreshDecorations', async () => {
+    await decorationHook.refreshDecorations();
+    vscode.window.showInformationMessage('Task decorations refreshed');
+  });
+  context.subscriptions.push(refreshDecorationsCommand);
+  
+  // Phase 3 Test Commands
+  const testPhase3Command = vscode.commands.registerCommand('clickuplink.testPhase3', async () => {
+    const { testPhase3Integration, testPhase3Scenarios } = await import('./tests/phase3Test');
+    await testPhase3Integration(context);
+  });
+  context.subscriptions.push(testPhase3Command);
+  
+  const testPhase3ScenariosCommand = vscode.commands.registerCommand('clickuplink.testPhase3Scenarios', async () => {
+    const { testPhase3Scenarios } = await import('./tests/phase3Test');
+    await testPhase3Scenarios(context);
+  });
+  context.subscriptions.push(testPhase3ScenariosCommand);
 }
 
 export function deactivate() {
