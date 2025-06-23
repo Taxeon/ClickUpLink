@@ -1,0 +1,25 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build and Run Extension",
+			"type": "shell",
+			"command": "npm run compile && code --extensionDevelopmentPath=$pwd",
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Build and Run Extension (Ignore Errors)",
+			"type": "shell",
+			"command": "npm run compile -- --skipLibCheck --noEmitOnError && code --new-window --extensionDevelopmentPath=\"c:/GitRepos/ClickUpLink\"",
+			"group": "build",
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"isBackground": false
+		}
+	]
+}

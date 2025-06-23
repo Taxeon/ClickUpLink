@@ -1,0 +1,21 @@
+[build]
+  functions = "functions"
+  publish = "public"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/health"
+  status = 200
+
+[[redirects]]
+  from = "/oauth/callback"
+  to = "/.netlify/functions/oauth-callback"
+  status = 200

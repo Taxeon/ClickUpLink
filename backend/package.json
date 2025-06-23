@@ -1,0 +1,27 @@
+{
+  "name": "clickuplink-auth-service",
+  "version": "1.0.0",
+  "description": "Secure proxy service for ClickUpLink VSCode extension OAuth",
+  "main": "index.js",
+"scripts": {
+  "start": "node index.js",
+  "dev": "nodemon index.js",
+  "test": "jest",
+  "test-auth": "node test-auth-service.js",
+  "test-prod": "node test-auth-service.js https://clickuplink.vercel.app"
+},
+  "dependencies": {
+    "axios": "^1.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "open": "^8.4.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
