@@ -301,24 +301,120 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.showErrorMessage(`Cleanup failed: ${error}`);
     }
   }));
-
-  // Add a logout command to the workspace view with gear icon
-  context.subscriptions.push(vscode.commands.registerCommand('clickup.logout', async () => {
-    const result = await vscode.window.showWarningMessage(
-      'Are you sure you want to logout from ClickUp?',
-      { modal: true },
-      'Logout',
-      'Cancel'
-    );
-    
-    if (result === 'Logout') {
-      await logout(context);
-      vscode.window.showInformationMessage('Logged out of ClickUp');
-      // Refresh views after logout
-      vscode.commands.executeCommand('setContext', 'clickup:authenticated', false);
-      authProvider.refresh();
-      workspaceProvider.refresh();
+  
+  // Add command to fix URI issues directly
+  context.subscriptions.push(vscode.commands.registerCommand('clickup.fixUriIssues', async () => {
+    try {
+      outputChannel.show();
+      outputChannel.appendLine('🔧 Starting URI fix process...');
+      
+      const serialized = context.globalState.get<string>('clickup.taskReferences');
+      if (!serialized) {
+        vscode.window.showInformationMessage('No references found to fix.');
+        return;
+      }
+      
+      const data = JSON.parse(serialized);
+      const fixedData: any = {};
+      let fixedCount = 0;
+      let removedCount = 0;
+      
+      outputChannel.appendLine(`📊 Found ${Object.keys(data).length} file entries to examine`);
+      
+      for (const uri in data) {
+        const refs = data[uri] || [];
+        outputChannel.appendLine(`🔍 Examining URI: "${uri}"`);
+        outputChannel.appendLine(`   - Has ${refs.length} references`);
+        
+        // Try to determine if this is a valid file path
+        let fixedUri = uri;
+        let isValid = false;
+        
+        // Check if file exists with current URI
+        try {
+          const parsedUri = vscode.Uri.parse(uri);
+          const stat = await vscode.workspace.fs.stat(parsedUri);
+          isValid = true;
+          outputChannel.appendLine(`   ✅ URI is valid: ${uri}`);
+        } catch {
+          outputChannel.appendLine(`   ❌ URI is invalid: ${uri}`);
+          
+          // Try to fix common URI issues
+          if (!uri.startsWith('file://')) {
+            // Add file:// scheme if missing
+            fixedUri = `file://${uri.replace(/\\/g, '/')}`;
+            try {
+              const parsedUri = vscode.Uri.parse(fixedUri);
+              const stat = await vscode.workspace.fs.stat(parsedUri);
+              isValid = true;
+              fixedCount++;
+              outputChannel.appendLine(`   🔧 Fixed by adding file:// scheme: ${fixedUri}`);
+            } catch {}
+          }
+          
+          if (!isValid && uri.includes('ClickUpLink')) {
+            // Try to map Extension Development Host paths to actual workspace paths
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (workspaceFolders && workspaceFolders.length > 0) {
+              const workspaceRoot = workspaceFolders[0].uri.fsPath;
+              // Extract filename from the URI
+              const filename = uri.split('/').pop() || uri.split('\\').pop();
+              if (filename) {
+                fixedUri = vscode.Uri.file(`${workspaceRoot}/${filename}`).toString();
+                try {
+                  const parsedUri = vscode.Uri.parse(fixedUri);
+                  const stat = await vscode.workspace.fs.stat(parsedUri);
+                  isValid = true;
+                  fixedCount++;
+                  outputChannel.appendLine(`   🔧 Fixed by mapping to workspace: ${fixedUri}`);
+                } catch {}
+              }
+            }
+          }
+        }
+        
+        if (isValid) {
+          // Validate and clean references
+          const validRefs = refs.filter((ref: any) => 
+            ref && ref.range && 
+            ref.range.start !== undefined && 
+            ref.range.end !== undefined &&
+            typeof ref.range.start.line === 'number' &&
+            typeof ref.range.start.character === 'number'
+          );
+          
+          if (validRefs.length > 0) {
+            fixedData[fixedUri] = validRefs;
+            outputChannel.appendLine(`   ✅ Kept ${validRefs.length} valid references`);
+          } else {
+            removedCount++;
+            outputChannel.appendLine(`   🗑️ Removed file with no valid references`);
+          }
+        } else {
+          removedCount++;
+          outputChannel.appendLine(`   🗑️ Removed invalid file entry`);
+        }
+      }
+      
+      // Save the fixed data
+      await context.globalState.update('clickup.taskReferences', JSON.stringify(fixedData));
+      
+      // Force refresh
       referencesProvider.refresh();
+      vscode.commands.executeCommand('workbench.action.reloadWindow');
+      
+      outputChannel.appendLine(`🎉 Fix complete!`);
+      outputChannel.appendLine(`   - Fixed ${fixedCount} URI issues`);
+      outputChannel.appendLine(`   - Removed ${removedCount} invalid entries`);
+      outputChannel.appendLine(`   - Final result: ${Object.keys(fixedData).length} valid files`);
+      
+      vscode.window.showInformationMessage(
+        `URI fix complete! Fixed ${fixedCount} issues, removed ${removedCount} invalid entries.`
+      );
+      
+    } catch (error) {
+      outputChannel.appendLine(`❌ Fix failed: ${error}`);
+      vscode.window.showErrorMessage(`URI fix failed: ${error}`);
     }
   }));
   

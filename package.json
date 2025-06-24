@@ -3,7 +3,7 @@
   "displayName": "ClickUp Link",
   "description": "VSCode extension for ClickUp integration using React-inspired architecture.",
   "version": "0.0.1",
-  "publisher": "clickuplink-dev",
+  "publisher": "your-publisher-name", 
   "author": {
     "name": "ClickUp Link Team"
   },
@@ -18,59 +18,63 @@
   "galleryBanner": {
     "color": "#C80000",
     "theme": "dark"
-  },
-  "engines": {
+  },  "engines": {
     "vscode": "^1.70.0"
   },
   "categories": [
     "Other"
   ],
-  "extensionKind": [
-    "workspace"
-  ],
+  "extensionKind": ["workspace"],
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": false
     }
   },
-  "browser": "./out/extension.js",
-  "activationEvents": [
+  "browser": "./out/extension.js",  "activationEvents": [
     "onStartupFinished",
-    "onUri",
-    "onCommand:clickuplink.login",
-    "onCommand:clickuplink.enterCode",
-    "onCommand:clickuplink.logout",
-    "onCommand:clickuplink.status",
-    "onCommand:clickuplink.debugAuth",
-    "onCommand:clickuplink.testNavigation",
-    "onCommand:clickuplink.navigateProjects",
-    "onCommand:clickuplink.navigateFolders",
-    "onCommand:clickuplink.navigateLists",
-    "onCommand:clickuplink.navigateTasks",
-    "onCommand:clickuplink.navigateBack",
-    "onCommand:clickuplink.testCache",
-    "onCommand:clickuplink.toggleDecorations",
-    "onCommand:clickuplink.insertTask",
-    "onCommand:clickuplink.browseAndInsert",
-    "onCommand:clickuplink.quickInsert",
-    "onCommand:clickuplink.openTaskDetails",
-    "onCommand:clickuplink.changeTaskStatus",
-    "onCommand:clickuplink.showQuickActions",
-    "onCommand:clickuplink.showTaskActions",
-    "onCommand:clickuplink.refreshDecorations",
-    "onCommand:clickuplink.testPhase3",
-    "onCommand:clickuplink.testPhase3Scenarios"
+    "onUri"
   ],
-  "main": "./out/extension.js",
-  "contributes": {
-    "commands": [
+  "main": "./out/extension.js",  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "clickup-panel",
+          "title": "ClickUp",
+          "icon": "resources/icon.png"
+        }
+      ]
+    },
+    "views": {
+      "clickup-panel": [
+        {
+          "id": "clickup-auth",
+          "name": "Authentication",
+          "when": "!clickup:authenticated",
+          "icon": "$(sign-in)"
+        },
+        {
+          "id": "clickup-workspace",
+          "name": "Workspace", 
+          "when": "clickup:authenticated",
+          "icon": "$(organization)"
+        },
+        {
+          "id": "clickup-references",
+          "name": "Task References",
+          "when": "clickup:authenticated",
+          "icon": "$(link)"
+        },
+        {
+          "id": "clickup-settings",
+          "name": "Settings",
+          "when": "clickup:authenticated",
+          "icon": "$(gear)"
+        }
+      ]
+    },    "commands": [
       {
         "command": "clickuplink.login",
         "title": "ClickUp: Login"
-      },
-      {
-        "command": "clickuplink.enterCode",
-        "title": "ClickUp: Enter Authorization Code"
       },
       {
         "command": "clickuplink.logout",
@@ -83,86 +87,23 @@
       {
         "command": "clickuplink.addTaskReference",
         "title": "ClickUp: Add Task Reference Here"
+      },      {
+        "command": "clickuplink.refreshTaskReferences",
+        "title": "ClickUp: Refresh Task References",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "clickuplink.deleteTaskReference",
+        "title": "ClickUp: Delete Task Reference",
+        "icon": "$(trash)"
       },
       {
         "command": "clickuplink.enableTestMode",
         "title": "ClickUp: Enable Test Mode"
       },
       {
-        "command": "clickuplink.debugAuth",
-        "title": "ClickUp: Debug Authentication State"
-      },
-      {
-        "command": "clickuplink.navigateProjects",
-        "title": "ClickUp: Navigate Projects"
-      },
-      {
-        "command": "clickuplink.navigateFolders",
-        "title": "ClickUp: Navigate Folders"
-      },
-      {
-        "command": "clickuplink.navigateLists",
-        "title": "ClickUp: Navigate Lists"
-      },
-      {
-        "command": "clickuplink.navigateTasks",
-        "title": "ClickUp: Navigate Tasks"
-      },
-      {
-        "command": "clickuplink.navigateBack",
-        "title": "ClickUp: Navigate Back"
-      },
-      {
-        "command": "clickuplink.testNavigation",
-        "title": "ClickUp: Test Navigation Flow"
-      },
-      {
-        "command": "clickuplink.testCache",
-        "title": "ClickUp: Test Cache Functionality"
-      },
-      {
-        "command": "clickuplink.toggleDecorations",
-        "title": "ClickUp: Toggle Inline Decorations"
-      },
-      {
-        "command": "clickuplink.insertTask",
-        "title": "ClickUp: Insert Task at Cursor"
-      },
-      {
-        "command": "clickuplink.browseAndInsert",
-        "title": "ClickUp: Browse and Insert Task"
-      },
-      {
-        "command": "clickuplink.quickInsert",
-        "title": "ClickUp: Quick Insert Task"
-      },
-      {
-        "command": "clickuplink.openTaskDetails",
-        "title": "ClickUp: Open Task Details"
-      },
-      {
-        "command": "clickuplink.changeTaskStatus",
-        "title": "ClickUp: Change Task Status"
-      },
-      {
-        "command": "clickuplink.showQuickActions",
-        "title": "ClickUp: Show Quick Actions"
-      },
-      {
-        "command": "clickuplink.showTaskActions",
-        "title": "ClickUp: Show Task Actions"
-      },
-      {
-        "command": "clickuplink.refreshDecorations",
-        "title": "ClickUp: Refresh Decorations"
-      },
-      {
-        "command": "clickuplink.testPhase3",
-        "title": "ClickUp: Test Phase 3 Integration"
-      },
-      {
-        "command": "clickuplink.testPhase3Scenarios",
-        "title": "ClickUp: Test Phase 3 Scenarios"
+        "command": "clickuplink.enterCode",
+        "title": "ClickUp: Enter Authorization Code"
       },
       {
         "command": "clickuplink.setupTaskReference",
@@ -183,18 +124,13 @@
       {
         "command": "clickuplink.changeStatus",
         "title": "ClickUp: Change Status"
-      },
-      {
+      },      {
         "command": "clickuplink.openInClickUp",
         "title": "ClickUp: Open in ClickUp"
       },
       {
-        "command": "clickuplink.debugShowReferences",
-        "title": "ClickUp: Debug - Show Stored Task References"
-      },
-      {
-        "command": "clickuplink.debugClearReferences",
-        "title": "ClickUp: Debug - Clear All Task References"
+        "command": "clickup.selectSpace",
+        "title": "ClickUp: Select Active Space"
       }
     ],
     "configuration": {
@@ -207,10 +143,7 @@
         },
         "clickupLink.theme": {
           "type": "string",
-          "enum": [
-            "light",
-            "dark"
-          ],
+          "enum": ["light", "dark"],
           "default": "light",
           "description": "Theme for ClickUp Link UI elements"
         },
@@ -256,11 +189,7 @@
         },
         "clickupLink.insertion.insertFormat": {
           "type": "string",
-          "enum": [
-            "reference",
-            "link",
-            "mention"
-          ],
+          "enum": ["reference", "link", "mention"],
           "default": "reference",
           "description": "Default format for task insertion"
         },
@@ -300,9 +229,27 @@
             "type": "string"
           },
           "default": [],
-          "description": "Custom trigger words for task detection"
+          "description": "Custom trigger words for task detection"        }      }
+    },    "menus": {
+      "view/title": [
+        {
+          "command": "clickuplink.refreshTaskReferences",
+          "when": "view == clickup-references",
+          "group": "navigation"
         }
-      }
+      ],
+      "view/item/context": [
+        {
+          "command": "clickuplink.deleteTaskReference",
+          "when": "view == clickup-references && viewItem == reference",
+          "group": "inline"
+        },
+        {
+          "command": "clickuplink.deleteTaskReference",
+          "when": "view == clickup-references && viewItem == unconfigured-reference",
+          "group": "inline"
+        }
+      ]
     },
     "keybindings": [
       {
@@ -314,24 +261,23 @@
     ]
   },
   "devDependencies": {
-    "@types/node": "18.x",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
     "@types/vscode": "^1.70.0",
+    "@types/node": "18.x",
     "@typescript-eslint/eslint-plugin": "^5.31.0",
     "@typescript-eslint/parser": "^5.31.0",
-    "css-loader": "^6.8.0",
-    "eslint": "^8.20.0",
-    "html-webpack-plugin": "^5.5.0",
-    "prettier": "^3.6.0",
+    "eslint": "^8.20.0",    "typescript": "^4.7.4",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "style-loader": "^3.3.0",
-    "ts-loader": "^9.4.0",
-    "typescript": "^4.7.4",
     "webpack": "^5.88.0",
-    "webpack-cli": "^5.1.0"
-  },  "scripts": {
+    "webpack-cli": "^5.1.0",
+    "ts-loader": "^9.4.0",
+    "css-loader": "^6.8.0",
+    "style-loader": "^3.3.0",
+    "html-webpack-plugin": "^5.5.0"
+  },
+  "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "compile:webviews": "webpack --config webpack.webviews.config.js --mode production",
@@ -340,9 +286,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "dev": "npm run compile && npm run watch",
-    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,js,json}\""
+    "dev": "npm run compile && npm run watch"
   },
   "dependencies": {
     "axios": "^1.10.0"
