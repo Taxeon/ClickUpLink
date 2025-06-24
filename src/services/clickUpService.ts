@@ -26,13 +26,14 @@ export class ClickUpService {
   async getAuthorizedUser() {
     return apiRequest(this.context, 'get', 'user');
   }
-
   /**
    * Get all workspaces accessible by the user
    */
   async getWorkspaces() {
-    const userData = await apiRequest(this.context, 'get', 'user');
-    return userData?.teams || [];
+    // ClickUp API v2 has a dedicated endpoint for teams
+    const teamsResponse = await apiRequest(this.context, 'get', 'team');
+    console.log('🔍 Teams API response:', JSON.stringify(teamsResponse, null, 2));
+    return teamsResponse?.teams || [];
   }
 
   /**
@@ -82,6 +83,26 @@ export class ClickUpService {
    */
   async getTaskDetails(taskId: string) {
     return apiRequest(this.context, 'get', `task/${taskId}`);
+  }
+
+  /**
+   * Get list details including available statuses
+   */
+  async getListDetails(listId: string) {
+    return apiRequest(this.context, 'get', `list/${listId}`);
+  }
+
+  /**
+   * Get available statuses for a specific list
+   */
+  async getListStatuses(listId: string) {
+    try {
+      const listDetails = await this.getListDetails(listId);
+      return listDetails?.statuses || [];
+    } catch (error) {
+      console.error('Failed to fetch list statuses:', error);
+      return [];
+    }
   }
 
   /**

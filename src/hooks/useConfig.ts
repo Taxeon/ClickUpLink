@@ -2,7 +2,6 @@
 // Placeholder for configuration hook logic 
 
 import * as vscode from 'vscode';
-import { setConfigState } from '../state/configState';
 import { ConfigState } from '../types';
 
 const CONFIG_SECTION = 'clickupLink';
@@ -16,10 +15,10 @@ export function readConfig(): ConfigState {
   };
 }
 
-export function subscribeToConfigChanges() {
+export function subscribeToConfigChanges(callback: (config: ConfigState) => void) {
   return vscode.workspace.onDidChangeConfiguration((event) => {
     if (event.affectsConfiguration(CONFIG_SECTION)) {
-      setConfigState(readConfig());
+      callback(readConfig());
     }
   });
 }

@@ -3,7 +3,7 @@
   "displayName": "ClickUp Link",
   "description": "VSCode extension for ClickUp integration using React-inspired architecture.",
   "version": "0.0.1",
-  "publisher": "your-publisher-name", 
+  "publisher": "clickuplink-dev",
   "author": {
     "name": "ClickUp Link Team"
   },
@@ -18,25 +18,30 @@
   "galleryBanner": {
     "color": "#C80000",
     "theme": "dark"
-  },  "engines": {
+  },
+  "engines": {
     "vscode": "^1.70.0"
   },
   "categories": [
     "Other"
   ],
-  "extensionKind": ["workspace"],
+  "extensionKind": [
+    "workspace"
+  ],
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": false
     }
   },
-  "browser": "./out/extension.js",  "activationEvents": [
+  "browser": "./out/extension.js",
+  "activationEvents": [
     "onStartupFinished",
     "onUri",
     "onCommand:clickuplink.login",
     "onCommand:clickuplink.enterCode",
     "onCommand:clickuplink.logout",
     "onCommand:clickuplink.status",
+    "onCommand:clickuplink.debugAuth",
     "onCommand:clickuplink.testNavigation",
     "onCommand:clickuplink.navigateProjects",
     "onCommand:clickuplink.navigateFolders",
@@ -51,6 +56,7 @@
     "onCommand:clickuplink.openTaskDetails",
     "onCommand:clickuplink.changeTaskStatus",
     "onCommand:clickuplink.showQuickActions",
+    "onCommand:clickuplink.showTaskActions",
     "onCommand:clickuplink.refreshDecorations",
     "onCommand:clickuplink.testPhase3",
     "onCommand:clickuplink.testPhase3Scenarios"
@@ -60,18 +66,31 @@
     "commands": [
       {
         "command": "clickuplink.login",
-        "title": "ClickUp: Start Authentication"
+        "title": "ClickUp: Login"
       },
       {
-        "command": "clickuplink.enterCode", 
+        "command": "clickuplink.enterCode",
         "title": "ClickUp: Enter Authorization Code"
       },
       {
         "command": "clickuplink.logout",
         "title": "ClickUp: Reset Authentication"
-      },      {
+      },
+      {
         "command": "clickuplink.status",
         "title": "ClickUp: Show Authentication Status"
+      },
+      {
+        "command": "clickuplink.addTaskReference",
+        "title": "ClickUp: Add Task Reference Here"
+      },
+      {
+        "command": "clickuplink.enableTestMode",
+        "title": "ClickUp: Enable Test Mode"
+      },
+      {
+        "command": "clickuplink.debugAuth",
+        "title": "ClickUp: Debug Authentication State"
       },
       {
         "command": "clickuplink.navigateProjects",
@@ -88,7 +107,8 @@
       {
         "command": "clickuplink.navigateTasks",
         "title": "ClickUp: Navigate Tasks"
-      },      {
+      },
+      {
         "command": "clickuplink.navigateBack",
         "title": "ClickUp: Navigate Back"
       },
@@ -129,6 +149,10 @@
         "title": "ClickUp: Show Quick Actions"
       },
       {
+        "command": "clickuplink.showTaskActions",
+        "title": "ClickUp: Show Task Actions"
+      },
+      {
         "command": "clickuplink.refreshDecorations",
         "title": "ClickUp: Refresh Decorations"
       },
@@ -139,6 +163,38 @@
       {
         "command": "clickuplink.testPhase3Scenarios",
         "title": "ClickUp: Test Phase 3 Scenarios"
+      },
+      {
+        "command": "clickuplink.setupTaskReference",
+        "title": "ClickUp: Setup Task Reference"
+      },
+      {
+        "command": "clickuplink.changeFolder",
+        "title": "ClickUp: Change Folder"
+      },
+      {
+        "command": "clickuplink.changeList",
+        "title": "ClickUp: Change List"
+      },
+      {
+        "command": "clickuplink.changeTask",
+        "title": "ClickUp: Change Task"
+      },
+      {
+        "command": "clickuplink.changeStatus",
+        "title": "ClickUp: Change Status"
+      },
+      {
+        "command": "clickuplink.openInClickUp",
+        "title": "ClickUp: Open in ClickUp"
+      },
+      {
+        "command": "clickuplink.debugShowReferences",
+        "title": "ClickUp: Debug - Show Stored Task References"
+      },
+      {
+        "command": "clickuplink.debugClearReferences",
+        "title": "ClickUp: Debug - Clear All Task References"
       }
     ],
     "configuration": {
@@ -151,7 +207,10 @@
         },
         "clickupLink.theme": {
           "type": "string",
-          "enum": ["light", "dark"],
+          "enum": [
+            "light",
+            "dark"
+          ],
           "default": "light",
           "description": "Theme for ClickUp Link UI elements"
         },
@@ -197,7 +256,11 @@
         },
         "clickupLink.insertion.insertFormat": {
           "type": "string",
-          "enum": ["reference", "link", "mention"],
+          "enum": [
+            "reference",
+            "link",
+            "mention"
+          ],
           "default": "reference",
           "description": "Default format for task insertion"
         },
@@ -240,35 +303,46 @@
           "description": "Custom trigger words for task detection"
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "clickuplink.addTaskReference",
+        "key": "ctrl+c ctrl+u",
+        "mac": "cmd+c cmd+u",
+        "when": "editorTextFocus"
+      }
+    ]
   },
   "devDependencies": {
-    "@types/vscode": "^1.70.0",
     "@types/node": "18.x",
-    "@typescript-eslint/eslint-plugin": "^5.31.0",
-    "@typescript-eslint/parser": "^5.31.0",
-    "eslint": "^8.20.0",    "typescript": "^4.7.4",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
+    "@types/vscode": "^1.70.0",
+    "@typescript-eslint/eslint-plugin": "^5.31.0",
+    "@typescript-eslint/parser": "^5.31.0",
+    "css-loader": "^6.8.0",
+    "eslint": "^8.20.0",
+    "html-webpack-plugin": "^5.5.0",
+    "prettier": "^3.6.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "webpack": "^5.88.0",
-    "webpack-cli": "^5.1.0",
-    "ts-loader": "^9.4.0",
-    "css-loader": "^6.8.0",
     "style-loader": "^3.3.0",
-    "html-webpack-plugin": "^5.5.0"
-  },
-  "scripts": {
+    "ts-loader": "^9.4.0",
+    "typescript": "^4.7.4",
+    "webpack": "^5.88.0",
+    "webpack-cli": "^5.1.0"
+  },  "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && npm run compile:webviews",
+    "compile": "tsc -p ./",
     "compile:webviews": "webpack --config webpack.webviews.config.js --mode production",
     "watch": "tsc -watch -p ./",
     "watch:webviews": "webpack --config webpack.webviews.config.js --mode development --watch",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "dev": "npm run compile && npm run watch"
+    "dev": "npm run compile && npm run watch",
+    "format": "prettier --write \"src/**/*.{ts,js,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,js,json}\""
   },
   "dependencies": {
     "axios": "^1.10.0"

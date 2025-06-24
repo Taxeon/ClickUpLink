@@ -4,7 +4,6 @@
 import axios from 'axios';
 import * as vscode from 'vscode';
 import { getAccessToken } from '../utils/tokenStorage';
-import { AuthComponent } from '../components/AuthComponent';
 import { checkAuth } from './useAuth';
 
 const CLICKUP_API_BASE_URL = 'https://api.clickup.com/api/v2';
@@ -41,20 +40,11 @@ export async function apiRequest(
         'Content-Type': 'application/json',
       },
     });
-    return response.data;
-  } catch (error: any) {
+    return response.data;  } catch (error: any) {
     // If we get a 401 Unauthorized error, the token might be expired
     if (error.response?.status === 401) {
-      // Try to refresh the token
-      const authComponent = AuthComponent.getInstance(context);
-      const refreshed = await authComponent.refreshAccessToken();
-      
-      if (refreshed) {
-        // Retry the request with the new token
-        return apiRequest(context, method, endpoint, body);
-      } else {
-        vscode.window.showErrorMessage('Your ClickUp session has expired. Please login again.');
-      }
+      vscode.window.showErrorMessage('Your ClickUp session has expired. Please login again.');
+      return null;
     }
     
     const errorMessage = error.response?.data?.err || error.message || 'An unknown API error occurred.';

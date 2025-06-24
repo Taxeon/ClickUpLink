@@ -2,6 +2,19 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"type": "npm",
+			"script": "compile",
+			"group": "build",
+			"label": "npm: compile",
+			"presentation": {
+				"panel": "dedicated",
+				"reveal": "never"
+			},
+			"problemMatcher": [
+				"$msCompile"
+			]
+		},
+		{
 			"label": "Build and Run Extension",
 			"type": "shell",
 			"command": "npm run compile && code --extensionDevelopmentPath=$pwd",
@@ -20,6 +33,15 @@
 				"$msCompile"
 			],
 			"isBackground": false
+		},
+		{
+			"label": "Run Extension with Test Folder",
+			"type": "shell",
+			"command": "code",
+			"args": ["c:\\temp\\clickup-test", "--extensionDevelopmentPath=c:\\GitRepos\\ClickUpLink"],
+			"group": "build",
+			"dependsOn": "npm: compile",
+			"problemMatcher": []
 		}
 	]
 }
