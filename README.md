@@ -15,10 +15,20 @@ What is ClickUpLink? A VS Code extension that provides seamless ClickUp task int
 
 ## 📦 Installation
 
-Install the extension by downloading the `.vsix` file and running:
+### Option 1: Command Line (Recommended)
+1. Download the `clickuplink-0.1.0.vsix` file from the GitHub release
+2. Open terminal/command prompt in your Downloads folder (or wherever you saved it)
+3. Run:
 ```bash
 code --install-extension clickuplink-0.1.0.vsix
 ```
+
+### Option 2: VS Code UI
+1. Download the `clickuplink-0.1.0.vsix` file from the GitHub release
+2. Open VS Code
+3. Go to Extensions panel (`Ctrl+Shift+X`)
+4. Click the "..." menu → "Install from VSIX..."
+5. Select the downloaded `clickuplink-0.1.0.vsix` file
 
 ## 🎯 Getting Started
 
