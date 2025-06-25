@@ -1,6 +1,6 @@
 {
   "name": "clickuplink",
-  "displayName": "ClickUp Link",
+  "displayName": "ClickUpLink",
   "description": "VSCode extension for ClickUp integration using React-inspired architecture.",  "version": "0.1.0",
   "publisher": "clickuplink", 
   "license": "GPL-3.0-or-later",
@@ -39,7 +39,7 @@
       "activitybar": [
         {
           "id": "clickup-panel",
-          "title": "ClickUp",
+          "title": "ClickUpLink",
           "icon": "resources/icon.png"
         }
       ]
@@ -73,64 +73,66 @@
       ]
     },    "commands": [
       {
-        "command": "clickuplink.login",
-        "title": "ClickUp: Login"
-      },
-      {
         "command": "clickuplink.logout",
-        "title": "ClickUp: Reset Authentication"
-      },
-      {
-        "command": "clickuplink.status",
-        "title": "ClickUp: Show Authentication Status"
+        "title": "ClickUpLink: Logout"
       },
       {
         "command": "clickuplink.addTaskReference",
-        "title": "ClickUp: Add Task Reference Here"
-      },      {
+        "title": "ClickUpLink: Add Task Reference Here"
+      },
+      {
         "command": "clickuplink.refreshTaskReferences",
-        "title": "ClickUp: Refresh Task References",
+        "title": "ClickUpLink: Refresh Task References",
         "icon": "$(refresh)"
       },
       {
         "command": "clickuplink.deleteTaskReference",
-        "title": "ClickUp: Delete Task Reference",
+        "title": "ClickUpLink: Delete Task Reference",
         "icon": "$(trash)"
       },
       {
-        "command": "clickuplink.enableTestMode",
-        "title": "ClickUp: Enable Test Mode"
+        "command": "clickuplink.login",
+        "title": "ClickUpLink: Login"
       },
       {
         "command": "clickuplink.enterCode",
-        "title": "ClickUp: Enter Authorization Code"
+        "title": "ClickUpLink: Enter Authorization Code"
       },
       {
         "command": "clickuplink.setupTaskReference",
-        "title": "ClickUp: Setup Task Reference"
+        "title": "ClickUpLink: Setup Task Reference"
       },
       {
         "command": "clickuplink.changeFolder",
-        "title": "ClickUp: Change Folder"
+        "title": "ClickUpLink: Change Folder"
       },
       {
         "command": "clickuplink.changeList",
-        "title": "ClickUp: Change List"
+        "title": "ClickUpLink: Change List"
       },
       {
         "command": "clickuplink.changeTask",
-        "title": "ClickUp: Change Task"
+        "title": "ClickUpLink: Change Task"
       },
       {
         "command": "clickuplink.changeStatus",
-        "title": "ClickUp: Change Status"
-      },      {
+        "title": "ClickUpLink: Change Status"
+      },
+      {
         "command": "clickuplink.openInClickUp",
-        "title": "ClickUp: Open in ClickUp"
+        "title": "ClickUpLink: Open in ClickUp"
       },
       {
         "command": "clickup.selectSpace",
-        "title": "ClickUp: Select Active Space"
+        "title": "ClickUpLink: Select Active Space"
+      },
+      {
+        "command": "clickuplink.openSpaceInClickUp",
+        "title": "ClickUpLink: Open Space in ClickUp"
+      },
+      {
+        "command": "clickuplink.buyPizza",
+        "title": "ClickUpLink: Buy Dev a Slice of Pizza"
       }
     ],
     "configuration": {
@@ -286,9 +288,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "dev": "npm run compile && npm run watch"
-  },
+    "dev": "npm run compile && npm run watch"  },
   "dependencies": {
-    "axios": "^1.10.0"
   }
 }

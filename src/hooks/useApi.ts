@@ -1,10 +1,10 @@
 // useApi.ts
 // API operations hook with OAuth2 support
 
-import axios from 'axios';
 import * as vscode from 'vscode';
 import { getAccessToken } from '../utils/tokenStorage';
 import { checkAuth } from './useAuth';
+import { httpClient } from '../utils/httpClient';
 
 const CLICKUP_API_BASE_URL = 'https://api.clickup.com/api/v2';
 
@@ -31,23 +31,23 @@ export async function apiRequest(
   }
 
   try {
-    const response = await axios({
-      method,
-      url: `${CLICKUP_API_BASE_URL}/${endpoint}`,
+    const response = await httpClient.request(`${CLICKUP_API_BASE_URL}/${endpoint}`, {
+      method: method.toUpperCase() as any,
       data: body,
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
     });
-    return response.data;  } catch (error: any) {
+    return response.data;
+  } catch (error: any) {
     // If we get a 401 Unauthorized error, the token might be expired
-    if (error.response?.status === 401) {
+    if (error.message?.includes('HTTP 401')) {
       vscode.window.showErrorMessage('Your ClickUp session has expired. Please login again.');
       return null;
     }
     
-    const errorMessage = error.response?.data?.err || error.message || 'An unknown API error occurred.';
+    const errorMessage = error.message || 'An unknown API error occurred.';
     vscode.window.showErrorMessage(`ClickUp API Error: ${errorMessage}`);
     console.error(error);
   }

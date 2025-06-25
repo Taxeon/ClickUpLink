@@ -2,17 +2,7 @@ import * as vscode from 'vscode';
 import { ClickUpService } from '../../services/clickUpService';
 import { ClickUpCodeLensTasks } from './ClickUpCodeLensTasks';
 import { ClickUpCodeLensDebug } from './ClickUpCodeLensDebug';
-
-interface TaskReference {
-  range: vscode.Range;
-  folderId?: string;
-  folderName?: string;
-  listId?: string;
-  listName?: string;
-  taskId?: string;
-  taskName?: string;
-  status?: string;
-}
+import { TaskReference } from '../../types/index';
 
 export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   private static instance: ClickUpCodeLensProvider;
@@ -96,19 +86,22 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
 
     }
 
-    // Separate clickable status
-    if (ref.status && ref.taskId) {
-      lenses.push(new vscode.CodeLens(new vscode.Range(line, col, line, col + ref.status.length), {
-        title: ref.status,
+    // Separate clickable status with enhanced display
+    if ((ref.status || ref.taskStatus?.status) && ref.taskId) {
+      const statusText = ref.taskStatus?.status || ref.status || 'Unknown';
+      const displayStatus = `🔄 ${statusText}`;
+      lenses.push(new vscode.CodeLens(new vscode.Range(line, col, line, col + displayStatus.length), {
+        title: displayStatus,
         command: 'clickuplink.changeStatus',
         arguments: [ref.range, ref.taskId]
       }));
-      col += ref.status.length;
+      col += displayStatus.length + 1;
     }
 
+    //Add clickup link to selected task in Clickup site
     if (ref.taskId) {
       lenses.push(new vscode.CodeLens(new vscode.Range(line, col, line, col + 6), {
-        title: '🔗 Open',
+        title: '🔗 ClickUp',
         command: 'clickuplink.openInClickUp',
         arguments: [ref.taskId]
       }));
@@ -266,7 +259,7 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     
     // Create an empty task reference that will show the "Select ClickUp Task" CodeLens
     this.saveTaskReference(uri, {
-      range,
+      range
       // No task details yet - this will trigger the setup CodeLens
     });
 

@@ -1,16 +1,6 @@
 import * as vscode from 'vscode';
 import { ClickUpService } from '../../services/clickUpService';
-
-interface TaskReference {
-  range: vscode.Range;
-  folderId?: string;
-  folderName?: string;
-  listId?: string;
-  listName?: string;
-  taskId?: string;
-  taskName?: string;
-  status?: string;
-}
+import { TaskReference } from '../../types/index';
 
 export class ClickUpCodeLensTasks {
   private context: vscode.ExtensionContext;
@@ -155,11 +145,16 @@ export class ClickUpCodeLensTasks {
         listName: selectedList.list.name,
         taskId: selectedTask.task.id,
         taskName: selectedTask.task.name,
-        status: selectedTask.task.status?.status || 'Open'
+        taskStatus: selectedTask.task.status || { status: 'Open', color: '#3b82f6' },
+        status: selectedTask.task.status?.status || 'Open',
+        lastUpdated: new Date().toISOString()
       });
 
+      // Update the comment text if one exists
+      await this.updateCommentText(uri, range, selectedTask.task);
+
       fireChangeEvent();
-      vscode.window.showInformationMessage(`Task linked: ${selectedTask.task.name}`);
+      vscode.window.showInformationMessage(`Task linked: ${selectedTask.task.name} (${selectedTask.task.status?.status || 'Open'})`);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to setup task: ${error}`);
     }
@@ -291,6 +286,15 @@ export class ClickUpCodeLensTasks {
       const currentRef = getTaskReference(editor.document.uri.toString(), range);
       if (currentRef) {
         currentRef.status = selected.status.status;
+        currentRef.taskStatus = selected.status;
+        currentRef.lastUpdated = new Date().toISOString();
+        
+        // Update comment text if it exists
+        await this.updateCommentText(editor.document.uri, range, {
+          name: currentRef.taskName,
+          status: selected.status
+        });
+        
         saveTaskReference(editor.document.uri.toString(), currentRef);
         fireChangeEvent();
       }
@@ -321,5 +325,29 @@ export class ClickUpCodeLensTasks {
       }
     }
     return folders;
+  }
+
+  private async updateCommentText(uri: vscode.Uri, range: vscode.Range, task: any): Promise<void> {
+    try {
+      const document = await vscode.workspace.openTextDocument(uri);
+      const editor = await vscode.window.showTextDocument(document);
+      
+      // Check if there's a comment to update on the line
+      const line = document.lineAt(range.start.line);
+      const lineText = line.text;
+      
+      // Look for existing ClickUp comment pattern
+      const commentPattern = /\/\/\s*TODO:\s*ClickUp Task[^$]*/;
+      if (commentPattern.test(lineText)) {
+        // Update the existing comment
+        const newCommentText = `// TODO: ClickUp Task - ${task.name} [${task.status?.status || 'Open'}]`;
+        
+        await editor.edit(editBuilder => {
+          editBuilder.replace(line.range, lineText.replace(commentPattern, newCommentText));
+        });
+      }
+    } catch (error) {
+      console.error('Failed to update comment text:', error);
+    }
   }
 }

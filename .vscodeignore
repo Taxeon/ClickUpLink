@@ -6,7 +6,7 @@ node_modules
 src
 *.map
 
-# Additional exclusions to reduce package size
+# Additional exclusions to reduce package size  
 backend/**
 **/node_modules/
 *.ts

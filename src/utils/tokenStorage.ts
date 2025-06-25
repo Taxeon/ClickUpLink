@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import axios from 'axios';
+import { httpClient } from './httpClient';
 
 const ACCESS_TOKEN_KEY = 'clickupAccessToken';
 const REFRESH_TOKEN_KEY = 'clickupRefreshToken';
@@ -78,7 +78,7 @@ export function getOAuthClientInfo() {
  */
 export async function validateAuthService(): Promise<boolean> {
   try {
-    const response = await axios.get(`${AUTH_SERVICE_URL}/health`);
+    const response = await httpClient.get(`${AUTH_SERVICE_URL}/health`);
     return response.data.status === 'ok';
   } catch (error) {
     console.error('Auth service is not reachable:', error);
@@ -96,7 +96,7 @@ export async function validateAuthService(): Promise<boolean> {
 export async function exchangeCodeForToken(code: string): Promise<TokenData> {
   try {
     // Use the secure backend service to exchange the code for tokens
-    const response = await axios.post(`${AUTH_SERVICE_URL}/api/token-exchange`, {
+    const response = await httpClient.post(`${AUTH_SERVICE_URL}/api/token-exchange`, {
       code,
       redirectUri: 'https://clickuplink.netlify.app/oauth/callback' // Use the Netlify deployment
     });
@@ -117,8 +117,8 @@ export async function exchangeCodeForToken(code: string): Promise<TokenData> {
     };
   } catch (error) {
     console.error('Error exchanging code for token:', error);
-    if (axios.isAxiosError(error) && error.response) {
-      throw new Error(`Failed to exchange code for token: ${JSON.stringify(error.response.data)}`);
+    if (error instanceof Error && error.message.includes('HTTP')) {
+      throw new Error(`Failed to exchange code for token: ${error.message}`);
     }
     throw new Error('Failed to exchange code for token: Network error');
   }
@@ -138,7 +138,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenDat
   
   try {
     // Use the secure backend service to refresh the token
-    const response = await axios.post(`${AUTH_SERVICE_URL}/api/token-refresh`, {
+    const response = await httpClient.post(`${AUTH_SERVICE_URL}/api/token-refresh`, {
       refreshToken
     });
 
@@ -158,8 +158,8 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenDat
     };
   } catch (error) {
     console.error('Error refreshing token:', error);
-    if (axios.isAxiosError(error) && error.response) {
-      throw new Error(`Failed to refresh token: ${JSON.stringify(error.response.data)}`);
+    if (error instanceof Error && error.message.includes('HTTP')) {
+      throw new Error(`Failed to refresh token: ${error.message}`);
     }
     throw new Error('Failed to refresh token: Network error');
   }

@@ -120,29 +120,76 @@ export class ClickUpCodeLensDebug {
       const data = JSON.parse(serialized);
       const refs = data[uri] || [];
       
-      // Find and remove the reference at the specified position
-      const initialLength = refs.length;
+      // Find the reference at the specified position
+      const referenceToDelete = refs.find((ref: any) => {
+        const refLine = ref.range?.start?.line || 0;
+        const refChar = ref.range?.start?.character || 0;
+        return refLine === line && refChar === character;
+      });
+      
+      if (!referenceToDelete) {
+        vscode.window.showWarningMessage('Reference not found at specified location');
+        return;
+      }
+
+      // Remove the reference from stored data
       const filteredRefs = refs.filter((ref: any) => {
         const refLine = ref.range?.start?.line || 0;
         const refChar = ref.range?.start?.character || 0;
         return !(refLine === line && refChar === character);
       });
       
-      if (filteredRefs.length < initialLength) {
-        if (filteredRefs.length > 0) {
-          data[uri] = filteredRefs;
-        } else {
-          delete data[uri];
-        }
-        
-        this.context.globalState.update('clickup.taskReferences', JSON.stringify(data));
-        fireChangeEvent();
-        vscode.window.showInformationMessage('Task reference deleted successfully');
+      // Update stored references
+      if (filteredRefs.length > 0) {
+        data[uri] = filteredRefs;
       } else {
-        vscode.window.showWarningMessage('Reference not found at specified location');
+        delete data[uri];
       }
+      
+      this.context.globalState.update('clickup.taskReferences', JSON.stringify(data));
+
+      // Also remove any comment text from the document if it exists
+      this.removeCommentTextFromDocument(uri, referenceToDelete);
+      
+      fireChangeEvent();
+      vscode.window.showInformationMessage('Task reference deleted successfully');
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to delete reference: ${error}`);
+    }
+  }
+
+  private async removeCommentTextFromDocument(uri: string, reference: any): Promise<void> {
+    try {
+      // Check if there's comment text to remove
+      if (!reference.commentText) {
+        return; // Nothing to remove from document
+      }
+
+      // Try to open the document
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
+      const editor = await vscode.window.showTextDocument(document);
+      
+      // Get the line where the reference is located
+      const lineNumber = reference.range?.start?.line || 0;
+      const line = document.lineAt(lineNumber);
+      const lineText = line.text;
+      
+      // Check if the line contains the comment text
+      if (lineText.includes(reference.commentText)) {
+        // Create edit to remove the comment line
+        const edit = new vscode.WorkspaceEdit();
+        const lineRange = new vscode.Range(
+          lineNumber, 0,
+          lineNumber + 1, 0  // Include the newline
+        );
+        edit.delete(document.uri, lineRange);
+        
+        // Apply the edit
+        await vscode.workspace.applyEdit(edit);
+      }
+    } catch (error) {
+      console.error('Failed to remove comment text from document:', error);
+      // Don't show error to user since the main deletion was successful
     }
   }
 }

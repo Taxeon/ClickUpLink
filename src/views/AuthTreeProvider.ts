@@ -36,12 +36,19 @@ export class AuthTreeProvider implements vscode.TreeDataProvider<AuthTreeItem> {
       } else {
         return [
           new AuthTreeItem('🔐 Not Connected', vscode.TreeItemCollapsibleState.None, 'disconnected'),
-          new AuthTreeItem('Login to ClickUp', vscode.TreeItemCollapsibleState.None, 'login', {
+          new AuthTreeItem('', vscode.TreeItemCollapsibleState.None, 'separator'), // Empty separator
+          new AuthTreeItem('Step 1: Login to ClickUp', vscode.TreeItemCollapsibleState.None, 'login', {
             command: 'clickuplink.login',
-            title: 'Login to ClickUp',
+            title: 'Step 1: Login to ClickUp',
             arguments: []
-          })
-        ];
+          }),
+          new AuthTreeItem('', vscode.TreeItemCollapsibleState.None, 'separator'), // Empty separator
+          new AuthTreeItem('Step 2: Enter Authorization Code', vscode.TreeItemCollapsibleState.None, 'enterCode', {
+            command: 'clickuplink.enterCode',
+            title: 'Step 2: Enter Authorization Code',
+            arguments: []
+          }),          
+         ];
       }
     }
     return [];

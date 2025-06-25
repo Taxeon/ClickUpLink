@@ -58,11 +58,12 @@ export function registerWorkspaceCommands(
         const spaceId = spaceIdMatch ? spaceIdMatch[1] : null;
         
         if (spaceId) {
-          // Store the current space selection
+          // Store the current space selection and workspace ID
           await context.globalState.update('clickup.currentSpaceId', spaceId);
           await context.globalState.update('clickup.currentSpaceName', selectedSpace.label);
+          await context.globalState.update('clickup.currentWorkspaceId', workspaceId);
           
-          outputChannel.appendLine(`✅ Active space set to: ${selectedSpace.label} (${spaceId})`);
+          outputChannel.appendLine(`✅ Active space set to: ${selectedSpace.label} (${spaceId}) in workspace ${workspaceId}`);
           vscode.window.showInformationMessage(`Active space set to: ${selectedSpace.label}`);
           
           // Refresh the workspace view to show the new current space
@@ -72,6 +73,55 @@ export function registerWorkspaceCommands(
     } catch (error) {
       outputChannel.appendLine(`❌ Error selecting space: ${error}`);
       vscode.window.showErrorMessage(`Failed to select space: ${error}`);
+    }
+  }));
+
+  // Register the open space in ClickUp command
+  context.subscriptions.push(vscode.commands.registerCommand('clickuplink.openSpaceInClickUp', async (spaceId: string) => {
+    outputChannel.appendLine(`🌐 Opening space in ClickUp: ${spaceId}`);
+    
+    try {
+      // Get the current workspace ID from global state
+      const workspaceId = context.globalState.get<string>('clickup.currentWorkspaceId');
+      
+      if (!workspaceId) {
+        // Try to get workspaces and use the first one
+        const apiResponse = await apiRequest(context, 'get', 'team');
+        const workspaces = apiResponse?.teams || [];
+        
+        if (workspaces.length > 0) {
+          const firstWorkspaceId = workspaces[0].id;
+          const spaceUrl = `https://app.clickup.com/${firstWorkspaceId}/v/o/s/${spaceId}`;
+          await vscode.env.openExternal(vscode.Uri.parse(spaceUrl));
+          outputChannel.appendLine(`✅ Opened space in browser: ${spaceUrl}`);
+        } else {
+          vscode.window.showErrorMessage('No workspace found. Please ensure you are logged in.');
+          outputChannel.appendLine(`❌ No workspace found`);
+        }
+      } else {
+        const spaceUrl = `https://app.clickup.com/${workspaceId}/v/o/s/${spaceId}`;
+        await vscode.env.openExternal(vscode.Uri.parse(spaceUrl));
+        outputChannel.appendLine(`✅ Opened space in browser: ${spaceUrl}`);
+      }
+    } catch (error) {
+      console.error('Error opening space in ClickUp:', error);
+      vscode.window.showErrorMessage('Failed to open space in ClickUp.');
+      outputChannel.appendLine(`❌ Error opening space: ${error}`);
+    }
+  }));
+
+  // Register the buy pizza command
+  context.subscriptions.push(vscode.commands.registerCommand('clickuplink.buyPizza', async () => {
+    outputChannel.appendLine(`🍕 Opening pizza support link`);
+    
+    try {
+      const pizzaUrl = 'https://ko-fi.com/activemindsgames';
+      await vscode.env.openExternal(vscode.Uri.parse(pizzaUrl));
+      outputChannel.appendLine(`✅ Opened pizza support link: ${pizzaUrl}`);
+    } catch (error) {
+      console.error('Error opening pizza support link:', error);
+      vscode.window.showErrorMessage('Failed to open support link.');
+      outputChannel.appendLine(`❌ Error opening pizza link: ${error}`);
     }
   }));
 

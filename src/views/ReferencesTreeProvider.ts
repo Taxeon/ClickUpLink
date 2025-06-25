@@ -106,8 +106,9 @@ export class ReferencesTreeProvider implements vscode.TreeDataProvider<Reference
           let contextValue: string;
           
           if (ref.taskName && ref.taskId) {
-            // Configured reference with actual task
-            label = `${ref.taskName} (Line ${line})`;
+            // Configured reference with actual task - show status as prefix
+            const statusText = ref.taskStatus?.status || ref.status || 'Unknown';
+            label = `(${statusText}) ${ref.taskName} (Line ${line})`;
             contextValue = 'reference';
           } else {            // Unconfigured reference - needs setup
             label = `Unconfigured Reference (Line ${line})`;

@@ -55,7 +55,14 @@ export class WorkspaceTreeProvider implements vscode.TreeDataProvider<WorkspaceT
           items.push(new WorkspaceTreeItem(
             `Current Space: ${currentSpaceName}`, 
             vscode.TreeItemCollapsibleState.None, 
-            'current-space'
+            'current-space',
+            {
+              command: 'clickuplink.openSpaceInClickUp',
+              title: 'Open Space in ClickUp',
+              arguments: [currentSpaceId]
+            },
+            element.workspaceId,
+            currentSpaceId
           ));
         } else {
           items.push(new WorkspaceTreeItem(
@@ -64,6 +71,24 @@ export class WorkspaceTreeProvider implements vscode.TreeDataProvider<WorkspaceT
             'no-space'
           ));
         }
+
+        // Add visual spacer
+        items.push(new WorkspaceTreeItem(
+          '', 
+          vscode.TreeItemCollapsibleState.None, 
+          'spacer'
+        ));
+
+        // Add Pizza button at the bottom
+        items.push(new WorkspaceTreeItem(
+          '🍕 Buy Dev a Slice of Pizza',
+          vscode.TreeItemCollapsibleState.None,
+          'pizza-button',
+          {
+            command: 'clickuplink.buyPizza',
+            title: 'Support Development'
+          }
+        ));
         
         return items;
       }
@@ -82,12 +107,14 @@ export class WorkspaceTreeItem extends vscode.TreeItem {
     public readonly collapsibleState: vscode.TreeItemCollapsibleState,
     public readonly contextValue: string,
     public readonly command?: vscode.Command,
-    public readonly workspaceId?: string
+    public readonly workspaceId?: string,
+    public readonly spaceId?: string
   ) {
     super(label, collapsibleState);
     this.contextValue = contextValue;
     this.command = command;
-    this.workspaceId = workspaceId;      // Set icons based on context
+    this.workspaceId = workspaceId;
+    this.spaceId = spaceId;      // Set icons based on context
     switch (contextValue) {
       case 'workspace':
         this.iconPath = new vscode.ThemeIcon('organization');
@@ -97,6 +124,13 @@ export class WorkspaceTreeItem extends vscode.TreeItem {
         break;
       case 'current-space':
         this.iconPath = new vscode.ThemeIcon('location', new vscode.ThemeColor('charts.green'));
+        break;
+      case 'pizza-button':
+        this.iconPath = new vscode.ThemeIcon('heart', new vscode.ThemeColor('charts.red'));
+        break;
+      case 'spacer':
+        // No icon for spacer - creates visual separation
+        this.iconPath = undefined;
         break;
       case 'no-space':
         this.iconPath = new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('charts.orange'));
