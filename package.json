@@ -1,16 +1,16 @@
 {
   "name": "clickuplink",
   "displayName": "ClickUp Link",
-  "description": "VSCode extension for ClickUp integration using React-inspired architecture.",
-  "version": "0.0.1",
-  "publisher": "your-publisher-name", 
+  "description": "VSCode extension for ClickUp integration using React-inspired architecture.",  "version": "0.1.0",
+  "publisher": "clickuplink", 
+  "license": "GPL-3.0-or-later",
   "author": {
-    "name": "ClickUp Link Team"
+    "name": "Kenneth Romero (AMGameDev)"
   },
-  "homepage": "https://github.com/your-username/clickuplink",
+  "homepage": "https://github.com/taxeon/ClickUpLink",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/clickuplink"
+    "url": "https://github.com/taxeon/ClickUpLink"
   },
   "extensionDependencies": [],
   "extensionPack": [],
