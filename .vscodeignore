@@ -28,6 +28,8 @@ Thumbs.db
 dist/
 *.vsix
 *.tgz
+
+# Development and test files
 test-*.md
 CLEANUP-SUMMARY.md
 PHASE3-README.md
@@ -35,3 +37,28 @@ clickup-test.md
 test-clickup-references.md
 DEPLOYMENT.md
 src/tests/**
+out/tests/**
+
+# Backup and development files
+extension.clean.ts
+extension.ts.backup
+src/extension.clean.ts
+src/extension.ts.backup
+out/extension.clean.js
+out/extension.clean.js.map
+
+# Test folders and temp files
+clickup-test/**
+temp/**
+
+# Deployment folders
+.vercel/**
+.netlify/**
+
+# Auto-generated/backup folders
+**/Corel Auto-Preserve/**
+resources/Corel Auto-Preserve/**
+
+# Source maps (keep extension.js.map for debugging)
+out/**/*.map
+!out/extension.js.map

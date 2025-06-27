@@ -72,7 +72,33 @@ https://ko-fi.com/activemindsgames
 If you want to check out the game I am developing or any of the other dev work I am up to checkout my Youtube page:
 [@ActiveMindGamesDev](https://www.youtube.com/@ActiveMindGamesDev)
 
-## � Privacy & Security
+## 🔧 Performance & Storage
+
+ClickUpLink is designed for optimal performance with small to medium projects:
+
+### Expected Performance
+- **Excellent**: 1-100 task references
+- **Good**: 100-500 task references  
+- **Acceptable**: 500-1000+ task references
+
+### Storage & Workspace Isolation
+- Task references are stored locally in VS Code's global state
+- References are automatically filtered by workspace/project folder
+- Only references from your current project are displayed
+- Switching between projects shows only relevant references
+
+### Performance Optimization
+If you notice decreased performance with large numbers of references (1000+), consider:
+- Using "Clear Completed References" to remove finished tasks
+- Regular cleanup of obsolete references
+- The extension includes workspace-based filtering to improve performance automatically
+
+### Reference Management
+- Access cleanup tools via the Task References panel → Actions menu
+- Use debug commands to monitor reference counts and performance
+- References survive VS Code restarts and extension updates
+
+## 🔒 Privacy & Security
 
 - OAuth tokens stored securely in VS Code's secret storage
 - Task references stored locally in VS Code's global state

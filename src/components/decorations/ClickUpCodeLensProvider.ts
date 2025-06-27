@@ -28,95 +28,196 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       ClickUpCodeLensProvider.instance = new ClickUpCodeLensProvider(context);
     }
     return ClickUpCodeLensProvider.instance;
-  }  async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
-    const codeLenses: vscode.CodeLens[] = [];
+  }
+
+  async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
+    const references = this.getFilteredReferences(document);
+    // Await all async calls
+    const allLenses = await Promise.all(references.map(ref => this.createCodeLensForReference(ref, document)));
+    return allLenses.flat();
+  }
+
+  // Streamlined reference filtering
+  private getFilteredReferences(document: vscode.TextDocument): TaskReference[] {
+    const allReferences = this.taskReferences.get(document.uri.toString()) || [];
+    const currentWorkspacePath = this.getWorkspaceFolderPath(document.uri);
     
-    // Only show CodeLens for manually added task references
-    const references = this.taskReferences.get(document.uri.toString()) || [];
-    
-    for (const reference of references) {
-      if (reference.taskId) {
-        // Show breadcrumbs for completed task references
-        const breadcrumbs = this.createBreadcrumbs(reference, reference.range.start.line);
-        codeLenses.push(...breadcrumbs);
-      } else {
-        // Show "+Select ClickUp Task" for incomplete references
-        codeLenses.push(new vscode.CodeLens(reference.range, {
+    return allReferences.filter(ref => 
+      !ref.workspaceFolderPath || 
+      !currentWorkspacePath || 
+      ref.workspaceFolderPath === currentWorkspacePath
+    );
+  }
+
+  // Simplified CodeLens creation
+  private async createCodeLensForReference(reference: TaskReference, document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
+    return reference.taskId 
+      ? await this.createBreadcrumbs(reference, reference.range.start.line)
+      : [new vscode.CodeLens(reference.range, {
           title: '$(add) Select ClickUp Task',
           command: 'clickuplink.setupTaskReference',
           arguments: [document.uri, reference.range]
-        }));
-      }
-    }
-    
-    return codeLenses;
-  }private createBreadcrumbs(ref: TaskReference, line: number): vscode.CodeLens[] {
+        })];
+  }
+
+  // Change this method to async
+  private async createBreadcrumbs(ref: TaskReference, line: number): Promise<vscode.CodeLens[]> {
     const lenses: vscode.CodeLens[] = [];
+    const fullBreadcrumb = this.buildFullBreadcrumb(ref);
     let col = 0;
 
-    // Format: 📁 Folder Name | 📋 List Name | Task Name | Status | 🔗 Open
-    if (ref.folderName) {
-      lenses.push(new vscode.CodeLens(new vscode.Range(line, col, line, col + ref.folderName.length + 2), {
-        title: `📁 ${ref.folderName}`,
-        command: 'clickuplink.changeFolder',
-        arguments: [ref.range, ref.folderId]
-      }));
-      col += ref.folderName.length + 2;     
-
-    }
-
-    if (ref.listName) {
-      lenses.push(new vscode.CodeLens(new vscode.Range(line, col, line, col + ref.listName.length + 2), {
-        title: `📋 ${ref.listName}`,
-        command: 'clickuplink.changeList',
-        arguments: [ref.range, ref.folderId, ref.listId]
-      }));
-      col += ref.listName.length + 2;
-
-    }
-
-    if (ref.taskName) {
-      // Task name without status
-      lenses.push(new vscode.CodeLens(new vscode.Range(line, col, line, col + ref.taskName.length), {
-        title: ref.taskName,
-        command: 'clickuplink.changeTask',
-        arguments: [ref.range, ref.listId, ref.taskId]
-      }));
-      col += ref.taskName.length;      
-
-    }
-
-    // Separate clickable status with enhanced display
-    if ((ref.status || ref.taskStatus?.status) && ref.taskId) {
-      const statusText = ref.taskStatus?.status || ref.status || 'Unknown';
-      const displayStatus = `🔄 ${statusText}`;
-      lenses.push(new vscode.CodeLens(new vscode.Range(line, col, line, col + displayStatus.length), {
-        title: displayStatus,
-        command: 'clickuplink.changeStatus',
-        arguments: [ref.range, ref.taskId]
-      }));
-      col += displayStatus.length + 1;
-    }
-
-    //Add clickup link to selected task in Clickup site
+    // Fetch latest description from ClickUp
     if (ref.taskId) {
-      lenses.push(new vscode.CodeLens(new vscode.Range(line, col, line, col + 6), {
-        title: '🔗 ClickUp',
-        command: 'clickuplink.openInClickUp',
-        arguments: [ref.taskId]
-      }));
+      try {
+        const task = await this.clickUpService.getTaskDetails(ref.taskId);
+        ref.description = task?.description || ref.description;
+        // If subtask, fetch parent description as well if needed
+        if (ref.parentTaskId) {
+          const parentTask = await this.clickUpService.getTaskDetails(ref.parentTaskId);
+          ref.parentTaskName = parentTask?.name || ref.parentTaskName;
+          ref.parentTaskDescription = parentTask?.description || ref.parentTaskDescription;
+        }
+      } catch (err) {
+        // Ignore fetch errors, fallback to stored description
+      }
+
+    }
+
+    // Streamlined breadcrumb creation with helper
+    const breadcrumbItems = [
+      { 
+        condition: ref.folderName, 
+        text: ref.folderName ? `📁 ${ref.folderName}` : '', 
+        command: 'clickuplink.changeFolder', 
+        args: [ref.range, ref.folderId],
+        tooltip: `Change folder selection\nFull path: ${fullBreadcrumb}`
+      },
+      { 
+        condition: ref.listName, 
+        text: ref.listName ? `📋 ${ref.listName}` : '', 
+        command: 'clickuplink.changeList', 
+        args: [ref.range, ref.folderId, ref.listId],
+        tooltip: `Change list selection\nFull path: ${fullBreadcrumb}`
+      },
+      { 
+        condition: ref.parentTaskName && ref.parentTaskId, 
+        text: ref.parentTaskName || '', 
+        command: 'clickuplink.changeTask', 
+        args: [ref.range, ref.listId, ref.parentTaskId],
+        tooltip: ref.parentTaskDescription
+    ? `${ref.parentTaskDescription}\n\nFull path: ${fullBreadcrumb}`
+    : `Change parent task selection "${ref.parentTaskName}"\nFull path: ${fullBreadcrumb}`
+      },
+      { 
+        condition: ref.taskName, 
+        text: ref.taskName ? `${ref.parentTaskId ? '🔗' : '📋'} ${ref.taskName}` : '', 
+        command: ref.parentTaskId ? 'clickuplink.changeSubtask' : 'clickuplink.changeTask',
+        args: ref.parentTaskId ? [ref.range, ref.listId, ref.parentTaskId, ref.taskId] : [ref.range, ref.listId, ref.taskId],
+        tooltip: this.buildTaskTooltip(ref, fullBreadcrumb)
+      }
+    ];
+
+    // Create breadcrumb lenses
+    breadcrumbItems.forEach(item => {
+      if (item.condition && item.text) {
+        lenses.push(this.createBreadcrumbLens(line, col, item.text, item.tooltip, item.command, item.args));
+        col += item.text.length + 1;
+      }
+    });
+
+    // Add status, assignee, and link lenses if taskId exists
+    if (ref.taskId) {
+      col = this.addStatusAssigneeAndLink(lenses, ref, line, col, fullBreadcrumb);
     }
 
     return lenses;
   }
+
+  // Helper to create individual breadcrumb lens
+  private createBreadcrumbLens(line: number, col: number, title: string, tooltip: string, command: string, args: any[]): vscode.CodeLens {
+    return new vscode.CodeLens(new vscode.Range(line, col, line, col + title.length), {
+      title,
+      tooltip,
+      command,
+      arguments: args
+    });
+  }
+
+  // Streamlined status/assignee/link creation
+  private addStatusAssigneeAndLink(lenses: vscode.CodeLens[], ref: TaskReference, line: number, col: number, fullBreadcrumb: string): number {
+    const statusItems = [
+      { 
+        condition: ref.status || ref.taskStatus?.status,
+        text: `🔄 ${ref.taskStatus?.status || ref.status || 'Unknown'}`,
+        command: 'clickuplink.changeStatus',
+        args: [ref.range, ref.taskId],
+        tooltip: `Change status\nDescription: ${ref.description || 'No description set'}`
+      },
+      {
+        condition: true, // Always show assignee
+        text: ref.assignee ? `👤 ${ref.assignee.username}` : '👤 unassigned',
+        command: 'clickuplink.changeAssignee',
+        args: [ref.range, ref.taskId],
+        tooltip: `Change assignee\nDescription: ${ref.description || 'No description set'}`
+      },
+      {
+        condition: true, // Always show link
+        text: '🔗 ClickUp',
+        command: 'clickuplink.openInClickUp',
+        args: [ref.taskId],
+        tooltip: `Open in ClickUp\nDescription: ${ref.description || 'No description set'}\n\nFull path: ${fullBreadcrumb}`
+      }
+    ];
+
+    statusItems.forEach(item => {
+      if (item.condition) {
+        lenses.push(this.createBreadcrumbLens(line, col, item.text, item.tooltip, item.command, item.args));
+        col += item.text.length + 1;
+      }
+    });
+
+    return col;
+  }
+
+  // Build task-specific tooltip with description
+  private buildTaskTooltip(ref: TaskReference, fullBreadcrumb: string): string {
+    const taskType = ref.parentTaskId ? 'subtask' : 'task';
+    const description = ref.description?.trim();
+    
+    if (description) {
+      return `${description}\n\nFull path: ${fullBreadcrumb}`;
+    } else {
+      return `No description set for this ${taskType}\n\nFull path: ${fullBreadcrumb}`;
+    }
+  }
+  private buildFullBreadcrumb(ref: TaskReference): string {
+    const parts = [
+      ref.folderName && `📁 ${ref.folderName}`,
+      ref.listName && `📋 ${ref.listName}`,
+      ref.parentTaskName,
+      ref.taskName && `${ref.parentTaskId ? '🔗' : '📋'} ${ref.taskName}`,
+      (ref.status || ref.taskStatus?.status) && `🔄 ${ref.taskStatus?.status || ref.status}`,
+      ref.assignee && `👤 ${ref.assignee.username}`
+    ].filter(Boolean);
+    
+    return parts.join(' | ');
+  }
+
+  // Streamlined reference management
   private getTaskReference(uri: string, range: vscode.Range): TaskReference | undefined {
-    const references = this.taskReferences.get(uri) || [];
-    return references.find(ref => 
+    return this.taskReferences.get(uri)?.find(ref => 
       ref.range.start.line === range.start.line && 
       ref.range.start.character === range.start.character
     );
-  }  private saveTaskReference(uri: string, reference: TaskReference): void {
+  }
+
+  private saveTaskReference(uri: string, reference: TaskReference): void {
     const references = this.taskReferences.get(uri) || [];
+    
+    // Add workspace folder path if missing
+    reference.workspaceFolderPath ??= this.getWorkspaceFolderPath(vscode.Uri.parse(uri));
+    
+    // Find and replace existing or add new
     const existingIndex = references.findIndex(ref => 
       ref.range.start.line === reference.range.start.line &&
       ref.range.start.character === reference.range.start.character
@@ -130,111 +231,112 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
 
     this.taskReferences.set(uri, references);
     this.persistReferences();
-  }private persistReferences(): void {
-    // Convert Map to plain object for compatibility with ReferencesTreeProvider
-    const dataObject: {[uri: string]: any[]} = {};
-    for (const [uri, references] of this.taskReferences) {
-      // Convert Range objects to plain objects for serialization
-      dataObject[uri] = references.map(ref => ({
-        ...ref,
-        range: {
-          start: { line: ref.range.start.line, character: ref.range.start.character },
-          end: { line: ref.range.end.line, character: ref.range.end.character }
-        }
-      }));
-    }
-    const serialized = JSON.stringify(dataObject);
-    this.context.globalState.update('clickup.taskReferences', serialized);
-  }  private loadReferences(): void {
+  }
+
+  // Streamlined persistence with functional approach
+  private persistReferences(): void {
+    const dataObject = Object.fromEntries(
+      Array.from(this.taskReferences.entries()).map(([uri, references]) => [
+        uri,
+        references.map(ref => ({
+          ...ref,
+          range: {
+            start: { line: ref.range.start.line, character: ref.range.start.character },
+            end: { line: ref.range.end.line, character: ref.range.end.character }
+          }
+        }))
+      ])
+    );
+    
+    this.context.globalState.update('clickup.taskReferences', JSON.stringify(dataObject));
+  }
+
+  public loadReferences(): void {
     const serialized = this.context.globalState.get<string>('clickup.taskReferences');
-    if (serialized) {
-      try {
-        const data = JSON.parse(serialized);
-        this.taskReferences.clear();
-        // Convert plain object back to Map and restore Range objects
-        for (const uri in data) {
-          const refs = data[uri].map((ref: any) => ({
-            ...ref,
-            range: new vscode.Range(
-              ref.range.start.line,
-              ref.range.start.character,
-              ref.range.end.line,
-              ref.range.end.character
-            )
-          }));
-          this.taskReferences.set(uri, refs);
-        }
-      } catch (error) {
-        console.error('Failed to load task references:', error);
-      }
+    if (!serialized) return;
+
+    try {
+      const data = JSON.parse(serialized);
+      this.taskReferences.clear();
+      
+      Object.entries(data).forEach(([uri, refs]) => {
+        if (!Array.isArray(refs)) return;
+        const restoredRefs = refs.map(ref => ({
+          ...ref,
+          range: new vscode.Range(
+            ref.range.start.line,
+            ref.range.start.character,
+            ref.range.end.line,
+            ref.range.end.character
+          )
+        }));
+        this.taskReferences.set(uri, restoredRefs);
+      });
+    } catch (error) {
+      console.error('Failed to load task references:', error);
     }
   }
-  // Simplified command handlers using existing navigation components
+
+  // Streamlined command handlers with common pattern
+  private async executeTaskCommand(
+    range: vscode.Range,
+    commandMethod: (
+      range: vscode.Range,
+      ...args: any[]
+    ) => Promise<void>,
+    ...args: any[]
+  ): Promise<void> {
+    const saveCallback = (uri: string, ref: TaskReference) => this.saveTaskReference(uri, ref);
+    const refreshCallback = () => this._onDidChangeCodeLenses.fire();
+    const getCallback = (uri: string, range: vscode.Range) => this.getTaskReference(uri, range);
+    
+    await commandMethod.call(this.tasks, range, ...args, getCallback, saveCallback, refreshCallback);
+  }
+
   async setupTaskReference(uri: vscode.Uri, range: vscode.Range): Promise<void> {
+    let ref = this.getTaskReference(uri.toString(), range);
+    if (!ref) {
+      ref = { range };
+      this.saveTaskReference(uri.toString(), ref);
+    }
     await this.tasks.setupTaskReference(
-      uri, 
-      range, 
-      (uri, ref) => this.saveTaskReference(uri, ref),
+      uri,
+      range,
+      (uri: string, ref: TaskReference) => this.saveTaskReference(uri, ref),
       () => this._onDidChangeCodeLenses.fire()
     );
   }
 
   async changeFolder(range: vscode.Range, currentFolderId: string): Promise<void> {
-    await this.tasks.changeFolder(
-      range, 
-      currentFolderId,
-      (uri, ref) => this.saveTaskReference(uri, ref),
-      () => this._onDidChangeCodeLenses.fire()
-    );
+    await this.executeTaskCommand(range, this.tasks.changeFolder, currentFolderId);
   }
 
   async changeList(range: vscode.Range, folderId: string, currentListId: string): Promise<void> {
-    await this.tasks.changeList(
-      range, 
-      folderId, 
-      currentListId,
-      (uri, range) => this.getTaskReference(uri, range),
-      (uri, ref) => this.saveTaskReference(uri, ref),
-      () => this._onDidChangeCodeLenses.fire()
-    );
+    await this.executeTaskCommand(range, this.tasks.changeList, folderId, currentListId);
   }
 
   async changeTask(range: vscode.Range, listId: string, currentTaskId: string): Promise<void> {
-    await this.tasks.changeTask(
-      range, 
-      listId, 
-      currentTaskId,
-      (uri, range) => this.getTaskReference(uri, range),
-      (uri, ref) => this.saveTaskReference(uri, ref),
-      () => this._onDidChangeCodeLenses.fire()
-    );
+    await this.executeTaskCommand(range, this.tasks.changeTask, listId, currentTaskId);
+  }
+
+  async changeSubtask(range: vscode.Range, listId: string, parentTaskId: string, subtaskId: string): Promise<void> {
+    await this.executeTaskCommand(range, this.tasks.changeSubtask, listId, parentTaskId, subtaskId);
   }
 
   async changeStatus(range: vscode.Range, taskId: string): Promise<void> {
-    await this.tasks.changeStatus(
-      range, 
-      taskId,
-      (uri, range) => this.getTaskReference(uri, range),
-      (uri, ref) => this.saveTaskReference(uri, ref),
-      () => this._onDidChangeCodeLenses.fire()
-    );
+    await this.executeTaskCommand(range, this.tasks.changeStatus, taskId);
+  }
+
+  async changeAssignee(range: vscode.Range, taskId: string): Promise<void> {
+    await this.executeTaskCommand(range, this.tasks.changeAssignee, taskId);
   }
 
   async openInClickUp(taskId: string): Promise<void> {
     await this.tasks.openInClickUp(taskId);
   }
 
-  public refresh(): void {
-    this._onDidChangeCodeLenses.fire();
-  }
-
-  public initialize(): void {
-    this.loadReferences();
-  }
-
-  public dispose(): void {
-    this._onDidChangeCodeLenses.dispose();
-  }  async addTaskReferenceAtCursor(): Promise<void> {
+  // Streamlined cursor reference addition
+  async addTaskReferenceAtCursor(): Promise<void> {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
       vscode.window.showErrorMessage('No active editor');
@@ -245,28 +347,41 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     const range = new vscode.Range(position, position);
     const uri = editor.document.uri.toString();
     
-    // Check if there's already a reference at this exact position
+    // Check for duplicates more concisely
     const existing = this.taskReferences.get(uri) || [];
-    const duplicateIndex = existing.findIndex(ref => 
+    const isDuplicate = existing.some(ref => 
       ref.range.start.line === position.line &&
       ref.range.start.character === position.character
     );
     
-    if (duplicateIndex !== -1) {
+    if (isDuplicate) {
       vscode.window.showWarningMessage('A task reference already exists at this position');
       return;
     }
     
-    // Create an empty task reference that will show the "Select ClickUp Task" CodeLens
     this.saveTaskReference(uri, {
-      range
-      // No task details yet - this will trigger the setup CodeLens
+      range,
+      workspaceFolderPath: this.getWorkspaceFolderPath(editor.document.uri)
     });
 
     this._onDidChangeCodeLenses.fire();
     vscode.window.showInformationMessage('ClickUp task reference added. Click the CodeLens to set it up.');
   }
-  // Debug methods for testing and troubleshooting
+
+  // Utility methods
+  public refresh(): void {
+    this._onDidChangeCodeLenses.fire();
+  }
+
+  public initialize(): void {
+    this.loadReferences();
+  }
+
+  public dispose(): void {
+    this._onDidChangeCodeLenses.dispose();
+  }
+
+  // Debug method delegations
   debugShowStoredReferences(outputChannel: vscode.OutputChannel): void {
     this.debug.debugShowStoredReferences(outputChannel);
   }
@@ -275,11 +390,26 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     this.debug.debugClearStoredReferences(this.taskReferences, () => this._onDidChangeCodeLenses.fire());
   }
 
+  clearCompletedReferences(): void {
+    this.debug.clearCompletedReferences(() => this._onDidChangeCodeLenses.fire());
+  }
+
   cleanupDuplicateReferences(): void {
     this.debug.cleanupDuplicateReferences(() => this._onDidChangeCodeLenses.fire());
   }
 
   deleteTaskReference(uri: string, line: number, character: number): void {
-    this.debug.deleteTaskReference(uri, line, character, () => this._onDidChangeCodeLenses.fire());
+    this.debug.deleteTaskReference(uri, line, character, () => {
+      this.loadReferences();
+      this._onDidChangeCodeLenses.fire();
+    });
+  }
+
+  private getWorkspaceFolderPath(uri: vscode.Uri): string | undefined {
+    return vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath;
+  }
+
+  private getCurrentWorkspaceFolderPath(): string | undefined {
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   }
 }

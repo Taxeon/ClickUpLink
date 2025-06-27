@@ -1,7 +1,7 @@
 {
   "name": "clickuplink",
   "displayName": "ClickUpLink",
-  "description": "VSCode extension for ClickUp integration using React-inspired architecture.",  "version": "0.1.0",
+  "description": "VSCode extension for ClickUp integration using React-inspired architecture.",  "version": "1.5.0",
   "publisher": "clickuplink", 
   "license": "GPL-3.0-or-later",
   "author": {
@@ -119,6 +119,10 @@
         "title": "ClickUpLink: Change Status"
       },
       {
+        "command": "clickuplink.changeAssignee",
+        "title": "ClickUpLink: Change Assignee"
+      },
+      {
         "command": "clickuplink.openInClickUp",
         "title": "ClickUpLink: Open in ClickUp"
       },
@@ -133,6 +137,26 @@
       {
         "command": "clickuplink.buyPizza",
         "title": "ClickUpLink: Buy Dev a Slice of Pizza"
+      },
+      {
+        "command": "clickuplink.createSpace",
+        "title": "ClickUpLink: Create New Space"
+      },
+      {
+        "command": "clickuplink.createFolder",
+        "title": "ClickUpLink: Create New Folder"
+      },
+      {
+        "command": "clickuplink.createList",
+        "title": "ClickUpLink: Create New List"
+      },
+      {
+        "command": "clickuplink.createTask",
+        "title": "ClickUpLink: Create New Task"
+      },
+      {
+        "command": "clickuplink.clearCompletedReferences",
+        "title": "ClickUpLink: Clear Completed Task References"
       }
     ],
     "configuration": {

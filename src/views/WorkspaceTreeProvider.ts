@@ -44,12 +44,17 @@ export class WorkspaceTreeProvider implements vscode.TreeDataProvider<WorkspaceT
             command: 'clickup.selectSpace',
             title: 'Select Active Space',
             arguments: [element.workspaceId]
+          }),
+          new WorkspaceTreeItem('+ Create New Space', vscode.TreeItemCollapsibleState.None, 'create-space', {
+            command: 'clickuplink.createSpace',
+            title: 'Create New Space',
+            arguments: [element.workspaceId]
           })
         ];
         
         // Try to get current active space
-        const currentSpaceId = this.context.globalState.get<string>('clickup.currentSpaceId');
-        const currentSpaceName = this.context.globalState.get<string>('clickup.currentSpaceName');
+        const currentSpaceId = this.context.workspaceState.get<string>('clickup.currentSpaceId');
+        const currentSpaceName = this.context.workspaceState.get<string>('clickup.currentSpaceName');
         
         if (currentSpaceId && currentSpaceName) {
           items.push(new WorkspaceTreeItem(
@@ -121,6 +126,9 @@ export class WorkspaceTreeItem extends vscode.TreeItem {
         break;
       case 'browse-spaces':
         this.iconPath = new vscode.ThemeIcon('search', new vscode.ThemeColor('charts.blue'));
+        break;
+      case 'create-space':
+        this.iconPath = new vscode.ThemeIcon('plus', new vscode.ThemeColor('charts.green'));
         break;
       case 'current-space':
         this.iconPath = new vscode.ThemeIcon('location', new vscode.ThemeColor('charts.green'));

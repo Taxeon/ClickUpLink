@@ -49,6 +49,13 @@ export function registerTaskCommands(
   ));
 
   context.subscriptions.push(vscode.commands.registerCommand(
+    'clickuplink.changeAssignee',
+    async (range: vscode.Range, taskId: string) => {
+      await codeLensProvider.changeAssignee(range, taskId);
+    }
+  ));
+
+  context.subscriptions.push(vscode.commands.registerCommand(
     'clickuplink.openInClickUp',
     async (taskId: string) => {
       await codeLensProvider.openInClickUp(taskId);
@@ -84,6 +91,8 @@ export function registerTaskCommands(
       outputChannel.appendLine('🔄 refreshTaskReferences command triggered');
       try {
         referencesProvider.refresh();
+        codeLensProvider.loadReferences(); //  reload references
+        codeLensProvider.refresh();        //  trigger CodeLens update
         console.log('✅ Task references tree view refreshed');
         outputChannel.appendLine('✅ Task references tree view refreshed');
         vscode.window.showInformationMessage('Task references refreshed');
@@ -109,6 +118,16 @@ export function registerTaskCommands(
       outputChannel.show();
       outputChannel.appendLine('🗑️ Clearing all stored task references...');
       codeLensProvider.debugClearStoredReferences();
+      referencesProvider.refresh(); // Refresh the tree view immediately
+    }
+  ));
+
+  context.subscriptions.push(vscode.commands.registerCommand(
+    'clickuplink.clearCompletedReferences',
+    () => {
+      outputChannel.show();
+      outputChannel.appendLine('🧹 Clearing completed task references...');
+      codeLensProvider.clearCompletedReferences();
       referencesProvider.refresh(); // Refresh the tree view immediately
     }
   ));
@@ -311,4 +330,11 @@ export function registerTaskCommands(
       vscode.window.showErrorMessage(`URI fix failed: ${error}`);
     }
   }));
+
+  context.subscriptions.push(vscode.commands.registerCommand(
+    'clickuplink.changeSubtask',
+    async (range: vscode.Range, listId: string, parentTaskId: string, subtaskId: string) => {
+      await codeLensProvider.changeSubtask(range, listId, parentTaskId, subtaskId);
+    }
+  ));
 }

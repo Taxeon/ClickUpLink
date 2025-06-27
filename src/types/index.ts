@@ -91,5 +91,12 @@ export interface TaskReference {
   status?: string;
   taskStatus?: ClickUpTaskStatus;
   lastUpdated?: string;
-  commentText?: string; // The actual comment text inserted in the code
+  commentText?: string;
+  workspaceFolderPath?: string;
+  assignee?: ClickUpUser;
+  assignees?: ClickUpUser[];
+  parentTaskId?: string;
+  parentTaskName?: string;
+  description?: string;
+  parentTaskDescription?: string; // <-- Add this line
 }

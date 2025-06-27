@@ -1,229 +1,133 @@
 import * as vscode from 'vscode';
 import { ClickUpService } from '../../services/clickUpService';
 import { TaskReference } from '../../types/index';
+import { ClickUpGetTask } from './ClickUpGetTask';
 
 export class ClickUpCodeLensTasks {
   private context: vscode.ExtensionContext;
   private clickUpService: ClickUpService;
+  private taskGetter: ClickUpGetTask;
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
     this.clickUpService = ClickUpService.getInstance(context);
+    this.taskGetter = new ClickUpGetTask(context);
   }
 
   async setupTaskReference(
-    uri: vscode.Uri, 
+    uri: vscode.Uri,
     range: vscode.Range,
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
   ): Promise<void> {
-    try {
-      console.log('🔧 Starting task reference setup...');
-      
-      // Let's check authentication step by step
-      console.log('🔐 Step 1: Checking raw authentication...');
-      const { getAccessToken } = await import('../../utils/tokenStorage');
-      const token = await getAccessToken(this.context);
-      console.log('🔐 Raw token exists:', !!token);
-      console.log('🔐 Token preview:', token ? token.substring(0, 10) + '...' : 'null');
-      
-      // Check service authentication 
-      const authStatus = await this.clickUpService.isAuthenticated();
-      console.log('🔐 Service auth status:', authStatus);
-      
-      if (!authStatus) {
-        console.log('❌ Not authenticated - prompting user to login');
-        const result = await vscode.window.showErrorMessage(
-          'Not authenticated with ClickUp. Please login first.',
-          'Login Now', 'Enable Test Mode', 'Check Status'
-        );
-        if (result === 'Login Now') {
-          vscode.commands.executeCommand('clickuplink.login');
-        } else if (result === 'Enable Test Mode') {
-          vscode.commands.executeCommand('clickuplink.enableTestMode');
-          // Retry after enabling test mode
-          setTimeout(() => this.setupTaskReference(uri, range, saveTaskReference, fireChangeEvent), 1000);
-        } else if (result === 'Check Status') {
-          vscode.commands.executeCommand('clickuplink.status');
-        }
-        return;
-      }
-
-      console.log('✅ Authenticated - testing API call...');
-        // Test API call directly first
-      console.log('🧪 Testing direct user API call...');
-      try {
-        const userData = await this.clickUpService.getAuthorizedUser();
-        console.log('👤 User data:', JSON.stringify(userData, null, 2));
-        
-        if (!userData) {
-          throw new Error('No user data returned from API');
-        }
-        
-        // Let's also see what workspace data looks like
-        console.log('🏢 Raw workspace data from user API:', userData.teams);
-      } catch (apiError) {
-        console.error('❌ API test failed:', apiError);
-        vscode.window.showErrorMessage(`API test failed: ${apiError}. Try logging in again.`);
-        return;
-      }
-      
-      // Now try getting workspaces
-      console.log('🏢 Fetching workspaces...');
-      const workspaces = await this.clickUpService.getWorkspaces();
-      console.log('📁 Workspaces found:', workspaces?.length || 0, workspaces);
-      
-      if (!workspaces || workspaces.length === 0) {
-        console.log('❌ No workspaces found - this suggests an API issue');
-        const result = await vscode.window.showErrorMessage(
-          'No workspaces found. This might be an authentication or API issue.',
-          'Try Login Again', 'Check Status', 'Enable Test Mode'
-        );
-        if (result === 'Try Login Again') {
-          vscode.commands.executeCommand('clickuplink.login');
-        } else if (result === 'Check Status') {
-          vscode.commands.executeCommand('clickuplink.status');
-        } else if (result === 'Enable Test Mode') {
-          vscode.commands.executeCommand('clickuplink.enableTestMode');
-        }
-        return;
-      }
-
-      // For now, use first workspace - could enhance to let user choose
-      const workspace = workspaces[0];
-      console.log('🏢 Using workspace:', workspace.name);
-      
-      const spaces = await this.clickUpService.getSpaces(workspace.id);
-      console.log('🌌 Spaces found:', spaces?.spaces?.length || 0);
-      
-      if (!spaces?.spaces?.length) {
-        vscode.window.showErrorMessage('No spaces found in workspace. Please check your ClickUp permissions.');
-        return;
-      }
-
-      // Get all folders from all spaces
-      const folders: any[] = [];
-      for (const space of spaces.spaces) {
-        console.log(`📂 Fetching folders for space: ${space.name}`);
-        const folderResponse = await this.clickUpService.getFolders(space.id);
-        if (folderResponse?.folders) {
-          folders.push(...folderResponse.folders);
-        }
-      }
-
-      console.log('📁 Total folders found:', folders.length);
-      
-      if (folders.length === 0) {
-        vscode.window.showErrorMessage('No folders found. Please create folders in your ClickUp workspace.');
-        return;
-      }
-
-      const selectedFolder = await vscode.window.showQuickPick(
-        folders.map(f => ({ label: f.name, folder: f })),
-        { placeHolder: 'Select folder' }
-      );
-      if (!selectedFolder) return;
-
-      const lists = await this.clickUpService.getLists(selectedFolder.folder.id);      const selectedList = await vscode.window.showQuickPick(
-        (lists?.lists || []).map((l: any) => ({ label: l.name, list: l })),
-        { placeHolder: 'Select list' }
-      ) as { label: string, list: any } | undefined;
-      if (!selectedList) return;
-
-      const tasks = await this.clickUpService.getTasks(selectedList.list.id);
-      const selectedTask = await vscode.window.showQuickPick(
-        (tasks?.tasks || []).map((t: any) => ({ label: t.name, description: t.status?.status, task: t })),
-        { placeHolder: 'Select task' }
-      ) as { label: string, description?: string, task: any } | undefined;
-      if (!selectedTask) return;
-
-      saveTaskReference(uri.toString(), {
-        range,
-        folderId: selectedFolder.folder.id,
-        folderName: selectedFolder.folder.name,
-        listId: selectedList.list.id,
-        listName: selectedList.list.name,
-        taskId: selectedTask.task.id,
-        taskName: selectedTask.task.name,
-        taskStatus: selectedTask.task.status || { status: 'Open', color: '#3b82f6' },
-        status: selectedTask.task.status?.status || 'Open',
-        lastUpdated: new Date().toISOString()
-      });
-
-      // Update the comment text if one exists
-      await this.updateCommentText(uri, range, selectedTask.task);
-
-      fireChangeEvent();
-      vscode.window.showInformationMessage(`Task linked: ${selectedTask.task.name} (${selectedTask.task.status?.status || 'Open'})`);
-    } catch (error) {
-      vscode.window.showErrorMessage(`Failed to setup task: ${error}`);
-    }
+    // Delegate the entire selection flow to ClickUpGetTask
+    await this.taskGetter.selectFolder(
+      range,
+      undefined, // No current folder for new reference
+      this.getTaskReferenceCallback(),
+      saveTaskReference,
+      fireChangeEvent
+    );
   }
 
   async changeFolder(
-    range: vscode.Range, 
+    range: vscode.Range,
     currentFolderId: string,
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
   ): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) return;
-
-    try {
-      const folders = await this.getFolders();
-      const selected = await vscode.window.showQuickPick(
-        folders.map(f => ({ label: f.name, picked: f.id === currentFolderId, folder: f })),
-        { placeHolder: 'Select different folder' }
-      );
-      if (!selected) return;
-
-      saveTaskReference(editor.document.uri.toString(), {
-        range,
-        folderId: selected.folder.id,
-        folderName: selected.folder.name
-      });
-      fireChangeEvent();
-    } catch (error) {
-      vscode.window.showErrorMessage(`Failed to change folder: ${error}`);
-    }
+    // Breadcrumb click: start at folder selection, passing current folder
+    await this.taskGetter.selectFolder(
+      range,
+      currentFolderId,
+      this.getTaskReferenceCallback(),
+      saveTaskReference,
+      fireChangeEvent
+    );
   }
 
   async changeList(
-    range: vscode.Range, 
-    folderId: string, 
+    range: vscode.Range,
+    folderId: string,
     currentListId: string,
     getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
   ): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) return;
-
-    try {
-      const lists = await this.clickUpService.getLists(folderId);
-      const selected = await vscode.window.showQuickPick(
-        (lists?.lists || []).map((l: any) => ({ label: l.name, picked: l.id === currentListId, list: l })),
-        { placeHolder: 'Select different list' }
-      ) as { label: string, picked: boolean, list: any } | undefined;
-      if (!selected) return;
-
-      const currentRef = getTaskReference(editor.document.uri.toString(), range);
-      saveTaskReference(editor.document.uri.toString(), {
-        ...currentRef!,
-        listId: selected.list.id,
-        listName: selected.list.name,
-        taskId: undefined, taskName: undefined, status: undefined // Reset task when changing list
-      });
-      fireChangeEvent();
-    } catch (error) {
-      vscode.window.showErrorMessage(`Failed to change list: ${error}`);
-    }
+    // Breadcrumb click: start at list selection, passing current folder and list
+    await this.taskGetter.selectList(
+      range,
+      folderId,
+      currentListId,
+      getTaskReference,
+      saveTaskReference,
+      fireChangeEvent
+    );
   }
 
   async changeTask(
-    range: vscode.Range, 
-    listId: string, 
+    range: vscode.Range,
+    listId: string,
     currentTaskId: string,
+    getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
+    saveTaskReference: (uri: string, reference: TaskReference) => void,
+    fireChangeEvent: () => void
+  ): Promise<void> {
+    // Breadcrumb click: start at task selection, passing current list and task
+    await this.taskGetter.selectTask(
+      range,
+      listId,
+      currentTaskId,
+      getTaskReference,
+      saveTaskReference,
+      fireChangeEvent
+    );
+  }
+
+  async changeSubtask(
+    range: vscode.Range,
+    listId: string,
+    parentTaskId: string,
+    subtaskId: string,
+    getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
+    saveTaskReference: (uri: string, reference: TaskReference) => void,
+    fireChangeEvent: () => void
+  ): Promise<void> {
+    // Find parent task details (needed for subtask selection)
+    const parentTask = await this.clickUpService.getTaskDetails(parentTaskId);
+    if (!parentTask) {
+      vscode.window.showErrorMessage('Could not find parent task for subtask selection');
+      return;
+    }
+    await this.taskGetter.selectSubtask(
+      range,
+      parentTask,
+      listId,
+      getTaskReference,
+      saveTaskReference,
+      fireChangeEvent,
+      { parentTaskId: parentTask.id, parentTaskName: parentTask.name }
+    );
+  }
+
+  /**
+   * Helper method to create a getTaskReference callback for the taskGetter
+   */
+  private getTaskReferenceCallback(): (uri: string, range: vscode.Range) => TaskReference | undefined {
+    return (uri: string, range: vscode.Range) => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return undefined;
+      
+      // This is a simple implementation - in a real scenario, you'd want to 
+      // retrieve the actual reference from your storage mechanism
+      // For now, return undefined to allow the modular functions to work
+      return undefined;
+    };
+  }
+
+  private async createNewTaskInList(
+    range: vscode.Range,
+    listId: string,
     getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
@@ -231,34 +135,47 @@ export class ClickUpCodeLensTasks {
     const editor = vscode.window.activeTextEditor;
     if (!editor) return;
 
+    const taskName = await vscode.window.showInputBox({
+      prompt: 'Enter name for new task',
+      placeHolder: 'Task name...',
+      validateInput: value => {
+        if (!value || value.trim().length === 0) {
+          return 'Task name cannot be empty';
+        }
+        return null;
+      },
+    });
+
+    if (!taskName) return;
+
     try {
-      const tasks = await this.clickUpService.getTasks(listId);
-      const selected = await vscode.window.showQuickPick(
-        (tasks?.tasks || []).map((t: any) => ({ 
-          label: t.name, 
-          description: t.status?.status,
-          picked: t.id === currentTaskId, 
-          task: t 
-        })),
-        { placeHolder: 'Select different task' }
-      ) as { label: string, description?: string, picked: boolean, task: any } | undefined;
-      if (!selected) return;
+      const newTask = await this.clickUpService.createTask(listId, taskName.trim());
+      if (!newTask) {
+        vscode.window.showErrorMessage('Failed to create task');
+        return;
+      }
 
       const currentRef = getTaskReference(editor.document.uri.toString(), range);
       saveTaskReference(editor.document.uri.toString(), {
         ...currentRef!,
-        taskId: selected.task.id,
-        taskName: selected.task.name,
-        status: selected.task.status?.status || 'Open'
+        taskId: newTask.id,
+        taskName: newTask.name,
+        status: newTask.status?.status || 'Open',
+        taskStatus: newTask.status || { status: 'Open', color: '#3b82f6' },
+        assignee:
+          newTask.assignees && newTask.assignees.length > 0 ? newTask.assignees[0] : undefined,
+        assignees: newTask.assignees || [],
+        lastUpdated: new Date().toISOString(),
       });
       fireChangeEvent();
+      vscode.window.showInformationMessage(`Created and linked to new task: ${newTask.name}`);
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to change task: ${error}`);
+      vscode.window.showErrorMessage(`Failed to create task: ${error}`);
     }
   }
 
   async changeStatus(
-    range: vscode.Range, 
+    range: vscode.Range,
     taskId: string,
     getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
     saveTaskReference: (uri: string, reference: TaskReference) => void,
@@ -275,25 +192,18 @@ export class ClickUpCodeLensTasks {
       }
 
       const statuses = await this.clickUpService.getListStatuses(taskDetails.list.id);
-      const selected = await vscode.window.showQuickPick(
+      const selected = (await vscode.window.showQuickPick(
         statuses.map((s: any) => ({ label: s.status, status: s })),
         { placeHolder: 'Select new status' }
-      ) as { label: string, status: any } | undefined;
+      )) as { label: string; status: any } | undefined;
       if (!selected) return;
 
       await this.clickUpService.updateTaskStatus(taskId, selected.status.status);
-      
+
       const currentRef = getTaskReference(editor.document.uri.toString(), range);
-      if (currentRef) {
-        currentRef.status = selected.status.status;
+      if (currentRef) {        currentRef.status = selected.status.status;
         currentRef.taskStatus = selected.status;
         currentRef.lastUpdated = new Date().toISOString();
-        
-        // Update comment text if it exists
-        await this.updateCommentText(editor.document.uri, range, {
-          name: currentRef.taskName,
-          status: selected.status
-        });
         
         saveTaskReference(editor.document.uri.toString(), currentRef);
         fireChangeEvent();
@@ -309,45 +219,197 @@ export class ClickUpCodeLensTasks {
     await vscode.env.openExternal(vscode.Uri.parse(`https://app.clickup.com/t/${taskId}`));
   }
 
-  private async getFolders(): Promise<any[]> {
-    const workspaces = await this.clickUpService.getWorkspaces();
-    const folders: any[] = [];
-
-    for (const workspace of workspaces) {
-      const spaces = await this.clickUpService.getSpaces(workspace.id);
-      if (spaces?.spaces) {
-        for (const space of spaces.spaces) {
-          const folderResponse = await this.clickUpService.getFolders(space.id);
-          if (folderResponse?.folders) {
-            folders.push(...folderResponse.folders);
-          }
-        }
-      }
-    }
-    return folders;
+  private getWorkspaceFolderPath(uri: vscode.Uri): string | undefined {
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+    return workspaceFolder?.uri.fsPath;
   }
 
-  private async updateCommentText(uri: vscode.Uri, range: vscode.Range, task: any): Promise<void> {
+  private getCurrentWorkspaceFolderPath(): string | undefined {
+    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+      return vscode.workspace.workspaceFolders[0].uri.fsPath;
+    }
+    return undefined;
+  }
+
+  async changeAssignee(
+    range: vscode.Range,
+    taskId: string,
+    getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
+    saveTaskReference: (uri: string, reference: TaskReference) => void,
+    fireChangeEvent: () => void
+  ): Promise<void> {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
+
     try {
-      const document = await vscode.workspace.openTextDocument(uri);
-      const editor = await vscode.window.showTextDocument(document);
-      
-      // Check if there's a comment to update on the line
-      const line = document.lineAt(range.start.line);
-      const lineText = line.text;
-      
-      // Look for existing ClickUp comment pattern
-      const commentPattern = /\/\/\s*TODO:\s*ClickUp Task[^$]*/;
-      if (commentPattern.test(lineText)) {
-        // Update the existing comment
-        const newCommentText = `// TODO: ClickUp Task - ${task.name} [${task.status?.status || 'Open'}]`;
-        
-        await editor.edit(editBuilder => {
-          editBuilder.replace(line.range, lineText.replace(commentPattern, newCommentText));
-        });
+      // Get task details to find the list and workspace info
+      const taskDetails = await this.clickUpService.getTaskDetails(taskId);
+      if (!taskDetails?.list?.id) {
+        vscode.window.showErrorMessage('Could not find task details');
+        return;
+      }
+
+      let members: any[] = [];
+
+      try {
+        // Approach 1: Try to get members from task members (people who can access this task)
+        console.log('🔍 Approach 1: Trying to get task members...');
+        const taskMembers = await this.clickUpService.getTaskMembers(taskId);
+        console.log('🔍 Task members response:', JSON.stringify(taskMembers, null, 2));
+
+        if (taskMembers?.members && taskMembers.members.length > 0) {
+          members = taskMembers.members;
+          console.log('✅ Found members from task members:', members.length);
+        } else {
+          console.log('❌ No members in task members, trying list details...');
+
+          // Approach 2: Try to get members from the list details
+          console.log('🔍 Approach 2: Trying to get members from list details...');
+          const listDetails = await this.clickUpService.getListDetails(taskDetails.list.id);
+          console.log('🔍 List details response:', JSON.stringify(listDetails, null, 2));
+
+          if (listDetails?.members && listDetails.members.length > 0) {
+            members = listDetails.members;
+            console.log('✅ Found members from list details:', members.length);
+          } else {
+            console.log('❌ No members in list details, trying space details...');
+
+            // Approach 3: Try to get members from space details
+            if (taskDetails.space?.id) {
+              console.log('🔍 Approach 3: Trying to get members from space details...');
+              const spaceDetails = await this.clickUpService.getSpaceDetails(taskDetails.space.id);
+              console.log('🔍 Space details response:', JSON.stringify(spaceDetails, null, 2));
+
+              if (spaceDetails?.members && spaceDetails.members.length > 0) {
+                members = spaceDetails.members;
+                console.log('✅ Found members from space details:', members.length);
+              } else {
+                console.log('❌ No members in space details, trying workspace members...');
+
+                // Approach 4: Try to get members from workspace
+                const workspaces = await this.clickUpService.getWorkspaces();
+                if (workspaces && workspaces.length > 0) {
+                  console.log('🔍 Approach 4: Trying to get workspace members...');
+                  const workspaceMembers = await this.clickUpService.getWorkspaceMembers(
+                    workspaces[0].id
+                  );
+                  console.log(
+                    '🔍 Workspace members response:',
+                    JSON.stringify(workspaceMembers, null, 2)
+                  );
+
+                  if (workspaceMembers && workspaceMembers.length > 0) {
+                    members = workspaceMembers;
+                    console.log('✅ Found members from workspace:', members.length);
+                  } else {
+                    console.log('❌ No members found in workspace either');
+                  }
+                } else {
+                  console.log('❌ No workspaces found for member lookup');
+                }
+              }
+            } else {
+              console.log('❌ No space ID found in task details');
+            }
+          }
+        }
+
+        console.log('🔍 Final members array:', JSON.stringify(members, null, 2));
+        console.log('🔍 Task details for debugging:', JSON.stringify(taskDetails, null, 2));
+      } catch (apiError) {
+        console.error('❌ Error fetching members from all approaches:', apiError);
+      }
+
+      if (!members || members.length === 0) {
+        // No members found - offer to open in ClickUp instead
+        const result = await vscode.window.showInformationMessage(
+          'No team members found. Would you like to open this task in ClickUp to assign it there?',
+          'Open in ClickUp',
+          'Cancel'
+        );
+
+        if (result === 'Open in ClickUp') {
+          await this.openInClickUp(taskId);
+        }
+        return;
+      }
+
+      const assigneeOptions = [
+        { label: 'Unassigned', member: null },
+        ...members.map((member: any) => ({
+          label: `${member.username || member.user?.username || 'Unknown'} (${member.email || member.user?.email || 'No email'})`,
+          member: member.user || member,
+        })),
+      ];
+
+      const selected = await vscode.window.showQuickPick(assigneeOptions, {
+        placeHolder: 'Select assignee',
+      });
+
+      if (selected === undefined) return;
+
+      // Update task assignee in ClickUp
+      const assigneeIds = selected.member ? [selected.member.id] : [];
+      await this.clickUpService.updateTaskAssignee(taskId, assigneeIds);
+
+      // Update local reference
+      const currentRef = getTaskReference(editor.document.uri.toString(), range);
+      if (currentRef) {
+        currentRef.assignee = selected.member || undefined;
+        currentRef.assignees = selected.member ? [selected.member] : [];
+        currentRef.lastUpdated = new Date().toISOString();
+
+        saveTaskReference(editor.document.uri.toString(), currentRef);
+        fireChangeEvent();
       }
     } catch (error) {
-      console.error('Failed to update comment text:', error);
+      console.error('❌ Error changing assignee:', error);
+
+      // Fallback - offer to open in ClickUp
+      const result = await vscode.window.showInformationMessage(
+        'Unable to fetch team members. Would you like to open this task in ClickUp to assign it there?',
+        'Open in ClickUp',
+        'Cancel'
+      );
+
+      if (result === 'Open in ClickUp') {
+        await this.openInClickUp(taskId);
+      }
     }
+  }
+
+  private async updateTaskReference(
+    range: vscode.Range,
+    task: any,
+    parentTask: any | null,
+    getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
+    saveTaskReference: (uri: string, reference: TaskReference) => void,
+    fireChangeEvent: () => void
+  ): Promise<void> {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
+
+    const currentRef = getTaskReference(editor.document.uri.toString(), range);
+    if (!currentRef) return;
+
+    // Update the reference
+    const updatedRef = {
+      ...currentRef,
+      taskId: task.id,
+      taskName: task.name,
+      description: task.description, // Ensure description is set
+      status: task.status?.status || 'Open',
+      taskStatus: task.status || { status: 'Open', color: '#3b82f6' },
+      assignee: task.assignees && task.assignees.length > 0 ? task.assignees[0] : undefined,
+      assignees: task.assignees || [],
+      lastUpdated: new Date().toISOString(),
+      // Include parent task info if this is a subtask
+      parentTaskId: parentTask?.id,
+      parentTaskName: parentTask?.name,
+    };
+
+    saveTaskReference(editor.document.uri.toString(), updatedRef);
+
+    fireChangeEvent();
   }
 }

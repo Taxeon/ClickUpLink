@@ -59,9 +59,9 @@ export function registerWorkspaceCommands(
         
         if (spaceId) {
           // Store the current space selection and workspace ID
-          await context.globalState.update('clickup.currentSpaceId', spaceId);
-          await context.globalState.update('clickup.currentSpaceName', selectedSpace.label);
-          await context.globalState.update('clickup.currentWorkspaceId', workspaceId);
+          await context.workspaceState.update('clickup.currentSpaceId', spaceId);
+          await context.workspaceState.update('clickup.currentSpaceName', selectedSpace.label);
+          await context.workspaceState.update('clickup.currentWorkspaceId', workspaceId);
           
           outputChannel.appendLine(`✅ Active space set to: ${selectedSpace.label} (${spaceId}) in workspace ${workspaceId}`);
           vscode.window.showInformationMessage(`Active space set to: ${selectedSpace.label}`);
@@ -82,7 +82,7 @@ export function registerWorkspaceCommands(
     
     try {
       // Get the current workspace ID from global state
-      const workspaceId = context.globalState.get<string>('clickup.currentWorkspaceId');
+      const workspaceId = context.workspaceState.get<string>('clickup.currentWorkspaceId');
       
       if (!workspaceId) {
         // Try to get workspaces and use the first one
@@ -312,6 +312,172 @@ export function registerWorkspaceCommands(
     } catch (error) {
       outputChannel.appendLine(`❌ Error browsing workspace: ${error}`);
       vscode.window.showErrorMessage(`Error browsing workspace: ${error}`);
+    }
+  }));
+
+  // Register the create space command
+  context.subscriptions.push(vscode.commands.registerCommand('clickuplink.createSpace', async (workspaceId: string) => {
+    outputChannel.appendLine(`🌟 Creating new space in workspace: ${workspaceId}`);
+    
+    try {
+      const spaceName = await vscode.window.showInputBox({
+        prompt: 'Enter name for new space',
+        placeHolder: 'Space name...',
+        validateInput: (value) => {
+          if (!value || value.trim().length === 0) {
+            return 'Space name cannot be empty';
+          }
+          return null;
+        }
+      });
+
+      if (!spaceName) {
+        return; // User cancelled
+      }
+
+      const { ClickUpService } = await import('../services/clickUpService');
+      const clickUpService = ClickUpService.getInstance(context);
+      
+      const newSpace = await clickUpService.createSpace(workspaceId, spaceName.trim());
+      
+      if (newSpace && newSpace.id) {
+        // Set the new space as current
+        await context.workspaceState.update('clickup.currentSpaceId', newSpace.id);
+        await context.workspaceState.update('clickup.currentSpaceName', newSpace.name);
+        await context.workspaceState.update('clickup.currentWorkspaceId', workspaceId);
+        
+        outputChannel.appendLine(`✅ Created new space: ${newSpace.name} (${newSpace.id})`);
+        vscode.window.showInformationMessage(`Created new space: ${newSpace.name}`);
+        
+        // Refresh the workspace view
+        vscode.commands.executeCommand('clickup.refreshWorkspaceView');
+      } else {
+        throw new Error('Failed to create space - invalid response');
+      }
+    } catch (error) {
+      console.error('Error creating space:', error);
+      vscode.window.showErrorMessage(`Failed to create space: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      outputChannel.appendLine(`❌ Error creating space: ${error}`);
+    }
+  }));
+
+  // Register the create folder command
+  context.subscriptions.push(vscode.commands.registerCommand('clickuplink.createFolder', async (spaceId: string) => {
+    outputChannel.appendLine(`📁 Creating new folder in space: ${spaceId}`);
+    
+    try {
+      const folderName = await vscode.window.showInputBox({
+        prompt: 'Enter name for new folder',
+        placeHolder: 'Folder name...',
+        validateInput: (value) => {
+          if (!value || value.trim().length === 0) {
+            return 'Folder name cannot be empty';
+          }
+          return null;
+        }
+      });
+
+      if (!folderName) return;
+
+      const { ClickUpService } = await import('../services/clickUpService');
+      const clickUpService = ClickUpService.getInstance(context);
+      
+      const newFolder = await clickUpService.createFolder(spaceId, folderName.trim());
+      
+      if (newFolder && newFolder.id) {
+        outputChannel.appendLine(`✅ Created new folder: ${newFolder.name} (${newFolder.id})`);
+        vscode.window.showInformationMessage(`Created new folder: ${newFolder.name}`);
+      } else {
+        throw new Error('Failed to create folder - invalid response');
+      }
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      vscode.window.showErrorMessage(`Failed to create folder: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      outputChannel.appendLine(`❌ Error creating folder: ${error}`);
+    }
+  }));
+
+  // Register the create list command
+  context.subscriptions.push(vscode.commands.registerCommand('clickuplink.createList', async (folderId: string, spaceId?: string) => {
+    outputChannel.appendLine(`📋 Creating new list in ${folderId ? 'folder' : 'space'}: ${folderId || spaceId}`);
+    
+    try {
+      const listName = await vscode.window.showInputBox({
+        prompt: 'Enter name for new list',
+        placeHolder: 'List name...',
+        validateInput: (value) => {
+          if (!value || value.trim().length === 0) {
+            return 'List name cannot be empty';
+          }
+          return null;
+        }
+      });
+
+      if (!listName) return;
+
+      const { ClickUpService } = await import('../services/clickUpService');
+      const clickUpService = ClickUpService.getInstance(context);
+      
+      let newList;
+      if (folderId) {
+        newList = await clickUpService.createList(folderId, listName.trim());
+      } else if (spaceId) {
+        newList = await clickUpService.createFolderlessList(spaceId, listName.trim());
+      } else {
+        throw new Error('No folder or space ID provided');
+      }
+      
+      if (newList && newList.id) {
+        outputChannel.appendLine(`✅ Created new list: ${newList.name} (${newList.id})`);
+        vscode.window.showInformationMessage(`Created new list: ${newList.name}`);
+      } else {
+        throw new Error('Failed to create list - invalid response');
+      }
+    } catch (error) {
+      console.error('Error creating list:', error);
+      vscode.window.showErrorMessage(`Failed to create list: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      outputChannel.appendLine(`❌ Error creating list: ${error}`);
+    }
+  }));
+
+  // Register the create task command
+  context.subscriptions.push(vscode.commands.registerCommand('clickuplink.createTask', async (listId: string) => {
+    outputChannel.appendLine(`📝 Creating new task in list: ${listId}`);
+    
+    try {
+      const taskName = await vscode.window.showInputBox({
+        prompt: 'Enter name for new task',
+        placeHolder: 'Task name...',
+        validateInput: (value) => {
+          if (!value || value.trim().length === 0) {
+            return 'Task name cannot be empty';
+          }
+          return null;
+        }
+      });
+
+      if (!taskName) return;
+
+      const taskDescription = await vscode.window.showInputBox({
+        prompt: 'Enter task description (optional)',
+        placeHolder: 'Task description...'
+      });
+
+      const { ClickUpService } = await import('../services/clickUpService');
+      const clickUpService = ClickUpService.getInstance(context);
+      
+      const newTask = await clickUpService.createTask(listId, taskName.trim(), taskDescription?.trim());
+      
+      if (newTask && newTask.id) {
+        outputChannel.appendLine(`✅ Created new task: ${newTask.name} (${newTask.id})`);
+        vscode.window.showInformationMessage(`Created new task: ${newTask.name}`);
+      } else {
+        throw new Error('Failed to create task - invalid response');
+      }
+    } catch (error) {
+      console.error('Error creating task:', error);
+      vscode.window.showErrorMessage(`Failed to create task: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      outputChannel.appendLine(`❌ Error creating task: ${error}`);
     }
   }));
 }
