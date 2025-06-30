@@ -1,14 +1,16 @@
 import * as vscode from 'vscode';
 import { ClickUpService } from '../../services/clickUpService';
 import { TaskReference } from '../../types/index';
-import { ClickUpGetTask } from './ClickUpGetTask';
+import { ClickUpGetTask } from './ClickUpGetTaskRef';
 
 export class ClickUpCodeLensTasks {
-  private context: vscode.ExtensionContext;
   private clickUpService: ClickUpService;
   private taskGetter: ClickUpGetTask;
 
-  constructor(context: vscode.ExtensionContext) {
+  constructor(
+    private context: vscode.ExtensionContext,
+    private getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined
+  ) {
     this.context = context;
     this.clickUpService = ClickUpService.getInstance(context);
     this.taskGetter = new ClickUpGetTask(context);
@@ -73,6 +75,7 @@ export class ClickUpCodeLensTasks {
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
   ): Promise<void> {
+    
     // Breadcrumb click: start at task selection, passing current list and task
     await this.taskGetter.selectTask(
       range,
@@ -114,15 +117,7 @@ export class ClickUpCodeLensTasks {
    * Helper method to create a getTaskReference callback for the taskGetter
    */
   private getTaskReferenceCallback(): (uri: string, range: vscode.Range) => TaskReference | undefined {
-    return (uri: string, range: vscode.Range) => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) return undefined;
-      
-      // This is a simple implementation - in a real scenario, you'd want to 
-      // retrieve the actual reference from your storage mechanism
-      // For now, return undefined to allow the modular functions to work
-      return undefined;
-    };
+    return this.getTaskReference;
   }
 
   private async createNewTaskInList(
@@ -411,5 +406,95 @@ export class ClickUpCodeLensTasks {
     saveTaskReference(editor.document.uri.toString(), updatedRef);
 
     fireChangeEvent();
+  }
+
+  /**
+   * Reconstruct a full TaskReference from just a taskId (for marker-based triggers).
+   * Fetches task details from ClickUp API and builds a TaskReference object, including parent, list, folder, and space.
+   * Always attempts to populate all possible details, logging warnings for any missing data.
+   */
+  async buildReferenceFromTaskId(taskId: string, document: vscode.TextDocument, markerRange: vscode.Range): Promise<TaskReference | undefined> {
+    try {
+      // Fetch the main task
+      const task = await this.clickUpService.getTaskDetails(taskId);
+      if (!task) {
+        vscode.window.showWarningMessage(`ClickUp: Could not fetch details for task ID ${taskId}`);
+        return undefined;
+      }
+
+      // Fetch parent task if this is a subtask
+      let parentTask: any = undefined;
+      if (task.parent && task.parent.id) {
+        try {
+          parentTask = await this.clickUpService.getTaskDetails(task.parent.id);
+        } catch (err) {
+          console.warn(`ClickUp: Could not fetch parent task for ${taskId}`);
+        }
+      }
+
+      // Fetch list details
+      let listId = task.list?.id;
+      let listName = task.list?.name;
+      let folderId = task.folder?.id;
+      let folderName = task.folder?.name;
+      let spaceId = task.space?.id;
+      let spaceName = task.space?.name;
+      let listDetails: any = undefined;
+      let folderDetails: any = undefined;
+      let spaceDetails: any = undefined;
+
+      if (listId) {
+        try {
+          listDetails = await this.clickUpService.getListDetails(listId);
+          listName = listDetails?.name || listName;
+          // If folder is missing, try to get from list details
+          if ((!folderId || !folderName) && listDetails?.folder) {
+            folderId = listDetails.folder.id;
+            folderName = listDetails.folder.name;
+          }
+          // If space is missing, try to get from list details
+          if ((!spaceId || !spaceName) && listDetails?.space) {
+            spaceId = listDetails.space.id;
+            spaceName = listDetails.space.name;
+          }
+        } catch (err) {
+          console.warn(`ClickUp: Could not fetch list details for listId ${listId}`);
+        }
+      }
+
+      // Fetch space details if still missing
+      if ((!spaceName || !spaceId) && spaceId) {
+        try {
+          spaceDetails = await this.clickUpService.getSpaceDetails(spaceId);
+          spaceName = spaceDetails?.name || spaceName;
+        } catch (err) {
+          console.warn(`ClickUp: Could not fetch space details for spaceId ${spaceId}`);
+        }
+      }
+
+      // Build the reference as robustly as possible
+      const ref: TaskReference = {
+        range: markerRange,
+        folderId,
+        folderName,
+        listId,
+        listName,
+        taskId: task.id,
+        taskName: task.name,
+        status: task.status?.status || 'Open',
+        taskStatus: task.status || { status: 'Open', color: '#3b82f6' },
+        assignee: task.assignees && task.assignees.length > 0 ? task.assignees[0] : undefined,
+        assignees: task.assignees || [],
+        lastUpdated: new Date().toISOString(),
+        parentTaskId: parentTask?.id,
+        parentTaskName: parentTask?.name,
+        description: task.description,
+        parentTaskDescription: parentTask?.description,
+      };
+      return ref;
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to build reference from taskId: ${error}`);
+      return undefined;
+    }
   }
 }

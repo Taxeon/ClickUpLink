@@ -458,15 +458,11 @@ export function registerWorkspaceCommands(
 
       if (!taskName) return;
 
-      const taskDescription = await vscode.window.showInputBox({
-        prompt: 'Enter task description (optional)',
-        placeHolder: 'Task description...'
-      });
-
+      // Ensure clickUpService is defined in this scope
       const { ClickUpService } = await import('../services/clickUpService');
       const clickUpService = ClickUpService.getInstance(context);
-      
-      const newTask = await clickUpService.createTask(listId, taskName.trim(), taskDescription?.trim());
+      // Do NOT prompt for taskDescription; just create with name
+      const newTask = await clickUpService.createTask(listId, taskName.trim());
       
       if (newTask && newTask.id) {
         outputChannel.appendLine(`✅ Created new task: ${newTask.name} (${newTask.id})`);

@@ -1,14 +1,18 @@
 import * as vscode from 'vscode';
 import { ClickUpService } from '../../services/clickUpService';
 import { TaskReference } from '../../types/index';
+import { TaskReferenceUtils} from './taskReferenceUtils';
 
 export class ClickUpGetTask {
   private context: vscode.ExtensionContext;
   private clickUpService: ClickUpService;
+  private taskReferenceUtils: TaskReferenceUtils;
+
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
     this.clickUpService = ClickUpService.getInstance(context);
+    this.taskReferenceUtils = new TaskReferenceUtils();
   }
 
   /**
@@ -28,9 +32,11 @@ export class ClickUpGetTask {
     try {
       // Get current active space from workspace state
       const currentSpaceId = this.context.workspaceState.get<string>('clickup.currentSpaceId');
-      
+
       if (!currentSpaceId) {
-        vscode.window.showErrorMessage('No active space selected. Please select a space first in the Workspace panel.');
+        vscode.window.showErrorMessage(
+          'No active space selected. Please select a space first in the Workspace panel.'
+        );
         return;
       }
 
@@ -40,16 +46,16 @@ export class ClickUpGetTask {
       // Create folder selection items with "Create New" option
       const folderItems = [
         { label: '+ Create New Folder', isNew: true, folder: null },
-        ...folders.map((f: any) => ({ 
-          label: f.name, 
-          picked: f.id === currentFolderId, 
-          isNew: false, 
-          folder: f 
-        }))
+        ...folders.map((f: any) => ({
+          label: f.name,
+          picked: f.id === currentFolderId,
+          isNew: false,
+          folder: f,
+        })),
       ];
 
       const selected = await vscode.window.showQuickPick(folderItems, {
-        placeHolder: 'Select folder or create new'
+        placeHolder: 'Select folder or create new',
       });
       if (!selected) return;
 
@@ -66,11 +72,18 @@ export class ClickUpGetTask {
       const nextRef = {
         ...parentRef,
         folderId: actualFolder.id,
-        folderName: actualFolder.name
+        folderName: actualFolder.name,
       };
       // Continue to list selection
-      await this.selectList(range, actualFolder.id, undefined, getTaskReference, saveTaskReference, fireChangeEvent, nextRef);
-
+      await this.selectList(
+        range,
+        actualFolder.id,
+        undefined,
+        getTaskReference,
+        saveTaskReference,
+        fireChangeEvent,
+        nextRef
+      );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to select folder: ${error}`);
     }
@@ -97,16 +110,16 @@ export class ClickUpGetTask {
       // Create list selection items with "Create New" option
       const listItems = [
         { label: '+ Create New List', isNew: true, list: null },
-        ...(lists?.lists || []).map((l: any) => ({ 
-          label: l.name, 
-          picked: l.id === currentListId, 
-          isNew: false, 
-          list: l 
-        }))
+        ...(lists?.lists || []).map((l: any) => ({
+          label: l.name,
+          picked: l.id === currentListId,
+          isNew: false,
+          list: l,
+        })),
       ];
 
       const selectedList = await vscode.window.showQuickPick(listItems, {
-        placeHolder: 'Select list or create new'
+        placeHolder: 'Select list or create new',
       });
       if (!selectedList) return;
 
@@ -123,11 +136,18 @@ export class ClickUpGetTask {
       const nextRef = {
         ...parentRef,
         listId: actualList.id,
-        listName: actualList.name
+        listName: actualList.name,
       };
       // Continue to task selection
-      await this.selectTask(range, actualList.id, undefined, getTaskReference, saveTaskReference, fireChangeEvent, nextRef);
-
+      await this.selectTask(
+        range,
+        actualList.id,
+        undefined,
+        getTaskReference,
+        saveTaskReference,
+        fireChangeEvent,
+        nextRef
+      );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to select list: ${error}`);
     }
@@ -154,28 +174,21 @@ export class ClickUpGetTask {
       // Create task selection items with "Create New" option
       const taskItems = [
         { label: '+ Create New Task', isNew: true, task: null },
-        ...(tasks?.tasks || []).map((t: any) => ({ 
-          label: t.name, 
+        ...(tasks?.tasks || []).map((t: any) => ({
+          label: t.name,
           description: t.status?.status,
           picked: t.id === currentTaskId,
-          isNew: false, 
-          task: t 
-        }))
+          isNew: false,
+          task: t,
+        })),
       ];
 
       const selectedTask = await vscode.window.showQuickPick(taskItems, {
-        placeHolder: 'Select task or create new'
+        placeHolder: 'Select task or create new',
       });
       if (!selectedTask) return;
 
       let actualTask = selectedTask.task;
-
-      // Handle new task creation
-      if (selectedTask.isNew) {
-        const newTask = await this.createNewItem({ id: listId }, 'task');
-        if (!newTask) return;
-        actualTask = newTask;
-      }     
 
       // Accumulate task info
       const nextRef = {
@@ -184,13 +197,47 @@ export class ClickUpGetTask {
         taskName: actualTask.name,
         status: actualTask.status?.status || 'Open',
         taskStatus: actualTask.status || { status: 'Open', color: '#3b82f6' },
-        assignee: actualTask.assignees && actualTask.assignees.length > 0 ? actualTask.assignees[0] : undefined,
+        assignee:
+          actualTask.assignees && actualTask.assignees.length > 0
+            ? actualTask.assignees[0]
+            : undefined,
         assignees: actualTask.assignees || [],
-        lastUpdated: new Date().toISOString()
+        lastUpdated: new Date().toISOString(),
       };
-      // Continue to subtask selection (for initial setup flow)
-      await this.selectSubtask(range, actualTask, listId, getTaskReference, saveTaskReference, fireChangeEvent, nextRef);
 
+      // Handle new task creation
+      if (selectedTask.isNew) {
+        const newTask = await this.createNewItem({ id: listId }, 'task');
+        if (!newTask) return;
+        actualTask = newTask;
+
+        // If there are no subtasks, save the main task reference immediately
+        const subtasks = await this.clickUpService.getSubtasksFromParentList(actualTask.id, listId);
+        if (!subtasks || subtasks.length === 0) {
+          if (saveTaskReference && getTaskReference) {
+            await this.taskReferenceUtils.saveTaskReference(
+              range,
+              actualTask,
+              null,
+              getTaskReference,
+              saveTaskReference,
+              fireChangeEvent,
+              nextRef
+            );
+          }
+        }
+      }
+
+      // Continue to subtask selection (for initial setup flow)
+      await this.selectSubtask(
+        range,
+        actualTask,
+        listId,
+        getTaskReference,
+        saveTaskReference,
+        fireChangeEvent,
+        nextRef
+      );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to select task: ${error}`);
     }
@@ -212,29 +259,40 @@ export class ClickUpGetTask {
     if (!editor) return;
 
     try {
-        console.log('TaskID:', parentTask.id, 'Parent List ID:', parentListId)
-      const subtasks = await this.clickUpService.getSubtasksFromParentList(parentTask.id, parentListId);
+      console.log('TaskID:', parentTask.id, 'Parent List ID:', parentListId);
+      const subtasks = await this.clickUpService.getSubtasksFromParentList(
+        parentTask.id,
+        parentListId
+      );
 
       // Create subtask selection items with "Create New" option
       const subtaskItems = [
         { label: '+ Create New Subtask', isNew: true, subtask: null },
-        ...(subtasks || []).map((s: any) => ({ 
-          label: s.name, 
-          isNew: false, 
-          subtask: s 
-        }))
+        ...(subtasks || []).map((s: any) => ({
+          label: s.name,
+          isNew: false,
+          subtask: s,
+        })),
       ];
 
       const selectedSubtask = await vscode.window.showQuickPick(subtaskItems, {
-        placeHolder: 'Select subtask or create new (optional - cancel to use main task)'
+        placeHolder: 'Select subtask or create new (optional - cancel to use main task)',
       });
 
-      console.log('SaveTaskRef:',saveTaskReference,'getTaskRef:',getTaskReference)
-      
+      console.log('SaveTaskRef:', saveTaskReference, 'getTaskRef:', getTaskReference);
+
       // If user cancels, that's OK - they want to use the main task
       if (!selectedSubtask) {
         if (saveTaskReference && getTaskReference) {
-          await this.saveTaskReference(range, parentTask, null, getTaskReference, saveTaskReference, fireChangeEvent, parentRef);
+          await this.taskReferenceUtils.saveTaskReference(
+            range,
+            parentTask,
+            null,
+            getTaskReference,
+            saveTaskReference,
+            fireChangeEvent,
+            parentRef
+          );
         }
         return;
       }
@@ -245,13 +303,33 @@ export class ClickUpGetTask {
       if (selectedSubtask.isNew) {
         actualSubtask = await this.createNewItem(parentTask, 'subtask');
         if (!actualSubtask) return;
+        // Immediately save and exit after creating a new subtask
+        if (saveTaskReference && getTaskReference) {
+          await this.taskReferenceUtils.saveTaskReference(
+            range,
+            actualSubtask,
+            parentTask,
+            getTaskReference,
+            saveTaskReference,
+            fireChangeEvent,
+            parentRef
+          );
+        }
+        return;
       }
 
-      // Save the subtask reference
+      // Save the subtask reference (for existing subtasks)
       if (saveTaskReference && getTaskReference) {
-        await this.saveTaskReference(range, actualSubtask, parentTask, getTaskReference, saveTaskReference, fireChangeEvent, parentRef);
+        await this.taskReferenceUtils.saveTaskReference(
+          range,
+          actualSubtask,
+          parentTask,
+          getTaskReference,
+          saveTaskReference,
+          fireChangeEvent,
+          parentRef
+        );
       }
-
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to select subtask: ${error}`);
     }
@@ -345,45 +423,5 @@ export class ClickUpGetTask {
     }
   }
 
-  /**
-   * Save a task reference and update UI
-   */
-  private async saveTaskReference(
-    range: vscode.Range,
-    task: any,
-    parentTask: any | null,
-    getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
-    saveTaskReference: (uri: string, reference: TaskReference) => void,
-    fireChangeEvent?: () => void,
-    parentRef: Partial<TaskReference> = {}
-  ): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) return;
-
-    let currentRef = getTaskReference(editor.document.uri.toString(), range);
-    if (!currentRef) {
-      currentRef = { range };
-    }
-
-    // Merge all accumulated info
-    const updatedRef = {
-      ...currentRef,
-      ...parentRef,
-      taskId: task.id,
-      taskName: task.name,
-      description: task.description,
-      status: task.status?.status || 'Open',
-      taskStatus: task.status || { status: 'Open', color: '#3b82f6' },
-      assignee: task.assignees && task.assignees.length > 0 ? task.assignees[0] : undefined,
-      assignees: task.assignees || [],
-      lastUpdated: new Date().toISOString(),
-      parentTaskId: parentTask?.id,
-      parentTaskName: parentTask?.name
-    };
-
-    saveTaskReference(editor.document.uri.toString(), updatedRef);
-    if (fireChangeEvent) fireChangeEvent();
-    const taskType = parentTask ? 'subtask' : 'task';
-    vscode.window.showInformationMessage(`${taskType} updated: ${task.name} (${task.status?.status || 'Open'})`);
-  }
+  
 }

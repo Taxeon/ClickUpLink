@@ -50,11 +50,25 @@ export class ClickUpService {
     return apiRequest(this.context, 'get', `space/${spaceId}/folder`);
   }
 
+   /**
+   * Get folders within a space
+   */
+  async getFolderDetails(folderId: string) {
+    return apiRequest(this.context, 'get', `folder/${folderId}`);
+  }
+
   /**
    * Get lists within a folder
    */
   async getLists(folderId: string) {
     return apiRequest(this.context, 'get', `folder/${folderId}/list`);
+  }
+
+    /**
+   * Get lists within a folder
+   */
+  async getListDetails(listId: string) {
+    return apiRequest(this.context, 'get', `list/${listId}`);
   }
 
   /**
@@ -65,17 +79,17 @@ export class ClickUpService {
   }
 
   async getSubtasks(taskId: string) {
-  return apiRequest(this.context, 'get', `task/${taskId}/subtask`);
-}
+    return apiRequest(this.context, 'get', `task/${taskId}/subtask`);
+  }
 
   async getAllListTasks(listId: string) {
     return apiRequest(this.context, 'get', `list/${listId}/task?subtasks=true`);
   }
 
-async getSubtasksFromParentList(taskId: string, parentListId: string){
-const allListTasks = await this.getAllListTasks(parentListId);
-return allListTasks.tasks.filter((t: any) => t.parent === taskId);
-}
+  async getSubtasksFromParentList(taskId: string, parentListId: string) {
+    const allListTasks = await this.getAllListTasks(parentListId);
+    return allListTasks.tasks.filter((t: any) => t.parent === taskId);
+  }
 
   /**
    * Update task status
@@ -91,28 +105,13 @@ return allListTasks.tasks.filter((t: any) => t.parent === taskId);
     return apiRequest(this.context, 'get', `task/${taskId}`);
   }
 
-  /**
-   * Get list details including available statuses
-   */
-  async getListDetails(listId: string) {
-    console.log(`🔧 ClickUpService.getListDetails called with listId: ${listId}`);
-    
-    try {
-      const result = await apiRequest(this.context, 'get', `list/${listId}`);
-      console.log('🔧 ClickUpService.getListDetails result:', result);
-      return result;
-    } catch (error) {
-      console.error('🔧 ClickUpService.getListDetails error:', error);
-      throw error;
-    }
-  }
 
   /**
    * Get space details including members
    */
   async getSpaceDetails(spaceId: string) {
     console.log(`🔧 ClickUpService.getSpaceDetails called with spaceId: ${spaceId}`);
-    
+
     try {
       const result = await apiRequest(this.context, 'get', `space/${spaceId}`);
       console.log('🔧 ClickUpService.getSpaceDetails result:', result);
@@ -183,13 +182,15 @@ return allListTasks.tasks.filter((t: any) => t.parent === taskId);
    * Create a new task in a list
    */
   async createTask(listId: string, name: string, description?: string) {
-    console.log(`🔧 ClickUpService.createTask called with listId: ${listId}, name: "${name}", description: "${description || 'None'}"`);
+    console.log(
+      `🔧 ClickUpService.createTask called with listId: ${listId}, name: "${name}", description: "${description || 'None'}"`
+    );
     const taskData: any = { name };
     if (description) {
       taskData.description = description;
     }
     console.log(`🔧 ClickUpService.createTask taskData:`, taskData);
-    
+
     try {
       const result = await apiRequest(this.context, 'post', `list/${listId}/task`, taskData);
       console.log('🔧 ClickUpService.createTask result:', result);
@@ -204,27 +205,34 @@ return allListTasks.tasks.filter((t: any) => t.parent === taskId);
    * Create a new subtask
    */
   async createSubtask(parentTaskId: string, name: string, description?: string) {
-    console.log(`🔧 ClickUpService.createSubtask called with parentTaskId: ${parentTaskId}, name: "${name}", description: "${description || 'None'}"`);
-    
+    console.log(
+      `🔧 ClickUpService.createSubtask called with parentTaskId: ${parentTaskId}, name: "${name}", description: "${description || 'None'}"`
+    );
+
     // First get the parent task to find its list ID
     const parentTask = await this.getTaskDetails(parentTaskId);
     if (!parentTask?.list?.id) {
       throw new Error('Could not find parent task list');
     }
-    
-    const taskData: any = { 
+
+    const taskData: any = {
       name,
-      parent: parentTaskId  // This makes it a subtask
+      parent: parentTaskId, // This makes it a subtask
     };
     if (description) {
       taskData.description = description;
     }
     console.log(`🔧 ClickUpService.createSubtask taskData:`, taskData);
     console.log(`🔧 ClickUpService.createSubtask creating in list: ${parentTask.list.id}`);
-    
+
     try {
       // Create the subtask using the regular task creation endpoint but with parent field
-      const result = await apiRequest(this.context, 'post', `list/${parentTask.list.id}/task`, taskData);
+      const result = await apiRequest(
+        this.context,
+        'post',
+        `list/${parentTask.list.id}/task`,
+        taskData
+      );
       console.log('🔧 ClickUpService.createSubtask result:', result);
       return result;
     } catch (error) {
@@ -238,7 +246,7 @@ return allListTasks.tasks.filter((t: any) => t.parent === taskId);
    */
   async getTaskMembers(taskId: string) {
     console.log(`🔧 ClickUpService.getTaskMembers called with taskId: ${taskId}`);
-    
+
     try {
       const result = await apiRequest(this.context, 'get', `task/${taskId}/member`);
       console.log('🔧 ClickUpService.getTaskMembers result:', result);
@@ -254,7 +262,7 @@ return allListTasks.tasks.filter((t: any) => t.parent === taskId);
    */
   async getWorkspaceMembers(workspaceId: string) {
     console.log(`🔧 ClickUpService.getWorkspaceMembers called with workspaceId: ${workspaceId}`);
-    
+
     try {
       // Try the team/{team_id} endpoint first to get team info including members
       const result = await apiRequest(this.context, 'get', `team/${workspaceId}`);
@@ -271,25 +279,31 @@ return allListTasks.tasks.filter((t: any) => t.parent === taskId);
    * Update task assignee
    */
   async updateTaskAssignee(taskId: string, assigneeIds: string[]) {
-    console.log(`🔧 ClickUpService.updateTaskAssignee called with taskId: ${taskId}, assigneeIds:`, assigneeIds);
-    
+    console.log(
+      `🔧 ClickUpService.updateTaskAssignee called with taskId: ${taskId}, assigneeIds:`,
+      assigneeIds
+    );
+
     const taskData = {
       assignees: {
         add: assigneeIds,
-        rem: [] // We'll clear existing and set new ones
-      }
+        rem: [], // We'll clear existing and set new ones
+      },
     };
-    
+
     // First clear existing assignees, then add new ones
     try {
       // Get current task to find existing assignees
       const taskDetails = await this.getTaskDetails(taskId);
       const currentAssigneeIds = taskDetails?.assignees?.map((a: any) => a.id) || [];
-      
+
       taskData.assignees.rem = currentAssigneeIds;
-      console.log(`🔧 ClickUpService.updateTaskAssignee removing existing assignees:`, currentAssigneeIds);
+      console.log(
+        `🔧 ClickUpService.updateTaskAssignee removing existing assignees:`,
+        currentAssigneeIds
+      );
       console.log(`🔧 ClickUpService.updateTaskAssignee adding new assignees:`, assigneeIds);
-      
+
       const result = await apiRequest(this.context, 'put', `task/${taskId}`, taskData);
       console.log('🔧 ClickUpService.updateTaskAssignee result:', result);
       return result;
@@ -298,5 +312,4 @@ return allListTasks.tasks.filter((t: any) => t.parent === taskId);
       throw error;
     }
   }
-
 }
