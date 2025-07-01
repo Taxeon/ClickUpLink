@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import { ClickUpService } from '../../services/clickUpService';
 import { TaskReference } from '../../types/index';
-import { TaskReferenceUtils} from './taskReferenceUtils';
+import { TaskReferenceUtils} from './taskRefUtils';
 
-export class ClickUpBuildTaskRef {
+export class BuildTaskRef {
   private context: vscode.ExtensionContext;
   private clickUpService: ClickUpService;
   private taskReferenceUtils: TaskReferenceUtils;
@@ -13,39 +13,43 @@ export class ClickUpBuildTaskRef {
     this.context = context;
     this.clickUpService = ClickUpService.getInstance(context);
     this.taskReferenceUtils = new TaskReferenceUtils();
-
   }
 
     /**
    * Get and select subtask for a given task (optional)
    */
-  async buildTaskRefandSave(
+  async buildTaskRef(
     range: vscode.Range,
-    refTask: any,
+    task: any,
     parentRef: Partial<TaskReference> = {},
     getTaskReference?: (uri: string, range: vscode.Range) => TaskReference | undefined,
     saveTaskReference?: (uri: string, reference: TaskReference) => void,
     fireChangeEvent?: () => void
   ): Promise<void> {
+    console.log('[buildTaskRef] range:', range, 'type:', typeof range, 'start:', range?.start, 'end:', range?.end);
+    if (!range || typeof range.start?.line !== 'number' || typeof range.end?.line !== 'number') {
+      vscode.window.showErrorMessage('ClickUp: Invalid or missing range for task reference.');
+      return;
+    }
     try {
-      // Fetch the latest task details
-      const fullRefTask = await this.clickUpService.getTaskDetails(refTask.id);
-
-      if (fullRefTask.parent) {
+      console.log("task passed to buildTaskRef:", task)
+      if (task.parent) {
+        // If this is a subtask, build the parent reference first
         await this.getParentTaskInfo(
           range,
-          fullRefTask.parent,
-          fullRefTask,
+          task.parent,
+          task,
           parentRef,
           getTaskReference,
           saveTaskReference,
           fireChangeEvent
         );
       } else {
+        // Top-level task: build the reference directly
         await this.getListInfo(
           range,
-          fullRefTask.list.id,
-          fullRefTask,
+          task.list.id,
+          task,
           parentRef,
           getTaskReference,
           saveTaskReference,
@@ -57,7 +61,7 @@ export class ClickUpBuildTaskRef {
     }
   }
 
-   /**
+  /**
    * Get and select task for a given list, then proceed to subtasks
    */
   async getParentTaskInfo(
@@ -69,39 +73,44 @@ export class ClickUpBuildTaskRef {
     saveTaskReference?: (uri: string, reference: TaskReference) => void,
     fireChangeEvent?: () => void
   ): Promise<void> {
-
+    console.log('[getParentTaskInfo] range:', range, 'type:', typeof range, 'start:', range?.start, 'end:', range?.end);
+    if (!range || typeof range.start?.line !== 'number' || typeof range.end?.line !== 'number') {
+      vscode.window.showErrorMessage('ClickUp: Invalid or missing range for parent task reference.');
+      return;
+    }
     try {
       const actualTask = await this.clickUpService.getTaskDetails(parentTaskId);
-      // Accumulate task info
-      const nextRef = {
+      // Pass the actual parent task object down the chain for use in saveTaskReference
+      const parentTaskRef = {
         ...parentRef,
-        taskId: actualTask.id,
-        taskName: actualTask.name,
-        status: actualTask.status?.status || 'Open',
-        taskStatus: actualTask.status || { status: 'Open', color: '#3b82f6' },
-        assignee:
+        parentTaskId: actualTask.id,
+        parentTaskName: actualTask.name,
+        parentTaskStatus: actualTask.status?.status || 'Open',
+        parentTaskStatusObj: actualTask.status || { status: 'Open', color: '#3b82f6' },
+        parentAssignee:
           actualTask.assignees && actualTask.assignees.length > 0
             ? actualTask.assignees[0]
             : undefined,
-        assignees: actualTask.assignees || [],
-        lastUpdated: new Date().toISOString(),
+        parentAssignees: actualTask.assignees || [],
+        parentLastUpdated: new Date().toISOString(),
       };
-      // Fix: pass actualTask.list.id, not listId (which is undefined)
+      // Now build the reference for the subtask, passing parent info and the parent task object
       await this.getListInfo(
         range,
         actualTask.list.id,
         refTask,
-        nextRef,
+        parentTaskRef,
         getTaskReference,
         saveTaskReference,
-        fireChangeEvent
+        fireChangeEvent,
+        actualTask // pass parentTask as extra argument
       );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to select task: ${error}`);
     }
   }
 
-    /**
+  /**
    * Get and select list for a given folder, then proceed to tasks
    */
   async getListInfo(
@@ -111,14 +120,18 @@ export class ClickUpBuildTaskRef {
     parentRef: Partial<TaskReference> = {},
     getTaskReference?: (uri: string, range: vscode.Range) => TaskReference | undefined,
     saveTaskReference?: (uri: string, reference: TaskReference) => void,
-    fireChangeEvent?: () => void
+    fireChangeEvent?: () => void,
+    parentTask?: any // new optional argument
   ): Promise<void> {
+    console.log('[getListInfo] range:', range, 'type:', typeof range, 'start:', range?.start, 'end:', range?.end);
+    if (!range || typeof range.start?.line !== 'number' || typeof range.end?.line !== 'number') {
+      vscode.window.showErrorMessage('ClickUp: Invalid or missing range for list reference.');
+      return;
+    }
     const editor = vscode.window.activeTextEditor;
     if (!editor) return;
     try {
       const list = await this.clickUpService.getListDetails(listId);
-      console.log("list:", list)
-      
       const nextRef = {
         ...parentRef,
         listId: list.id,
@@ -131,7 +144,8 @@ export class ClickUpBuildTaskRef {
         nextRef,
         getTaskReference,
         saveTaskReference,
-        fireChangeEvent
+        fireChangeEvent,
+        parentTask // pass parentTask down
       );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to select list: ${error}`);
@@ -148,11 +162,17 @@ export class ClickUpBuildTaskRef {
     parentRef: Partial<TaskReference> = {},
     getTaskReference?: (uri: string, range: vscode.Range) => TaskReference | undefined,
     saveTaskReference?: (uri: string, reference: TaskReference) => void,
-    fireChangeEvent?: () => void
+    fireChangeEvent?: () => void,
+    parentTask?: any // new optional argument
   ): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) return;
     try {
+      console.log('[getFolderInfo] range:', range, 'type:', typeof range, 'start:', range?.start, 'end:', range?.end);
+      if (!range || typeof range.start?.line !== 'number' || typeof range.end?.line !== 'number') {
+        vscode.window.showErrorMessage('ClickUp: Invalid or missing range for folder reference.');
+        return;
+      }
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) return;
       if (!folderId) throw new Error('No folderId provided');
       const folder = await this.clickUpService.getFolderDetails(folderId);
       const nextRef = {
@@ -160,23 +180,25 @@ export class ClickUpBuildTaskRef {
         folderId: folder.id,
         folderName: folder.name,
       };
-
-      console.log("saveTaskReference:", saveTaskReference);
-      console.log("getTaskReference:", getTaskReference);
-      console.log("nextRef:", nextRef);
       if (saveTaskReference && getTaskReference) {
-        await this.taskReferenceUtils.saveTaskReference(
-          range,
-          refTask,
-          null,
-          getTaskReference,
-          saveTaskReference,
-          fireChangeEvent,
-          nextRef
-        );
+        try {
+          await this.taskReferenceUtils.saveTaskReference(
+            range,
+            refTask,
+            parentTask || null, // pass parentTask if present, else null
+            getTaskReference,
+            saveTaskReference,
+            fireChangeEvent,
+            nextRef
+          );
+        } catch (err) {
+          console.error('[getFolderInfo] saveTaskReference error:', err, 'range:', range);
+          vscode.window.showErrorMessage(`ClickUp: saveTaskReference failed: ${err}`);
+        }
       }
     } catch (error) {
-      vscode.window.showErrorMessage(`Failed to select folder: ${error}`);
+      console.error('[getFolderInfo] error:', error, 'range:', range);
+      vscode.window.showErrorMessage(`Failed to get folder info: ${error}`);
     }
   }
 }

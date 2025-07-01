@@ -151,8 +151,6 @@ export class ReferencesTreeProvider implements vscode.TreeDataProvider<Reference
           if (ref.taskName && ref.taskId) {
             // Configured reference with actual task - show status as prefix
             const statusText = ref.taskStatus?.status || ref.status || 'Unknown';
-            
-            // Include parent task info if this is a subtask
             if (ref.parentTaskName && ref.parentTaskId) {
               label = `(${statusText}) ${ref.parentTaskName} > ${ref.taskName} (Line ${line})`;
             } else {
@@ -165,7 +163,6 @@ export class ReferencesTreeProvider implements vscode.TreeDataProvider<Reference
             label = `Unconfigured Reference (Line ${line})`;
             contextValue = 'unconfigured-reference';
           }
-          
           items.push(new ReferenceTreeItem(
             label,
             vscode.TreeItemCollapsibleState.None,

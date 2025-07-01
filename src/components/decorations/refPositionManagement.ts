@@ -21,10 +21,11 @@ export class RefPositionManager {
   ): void {
     const uri = document.uri.toString();
     const markerRegex = /\/\/\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
-    const foundRefs: TaskReference[] = [];
+    const activeRefs: TaskReference[] = [];
     const orphanedRefs: TaskReference[] = [];
     const seenTaskIds = new Set<string>();
 
+    // 1. Scan for all marker-based references in the document
     for (let line = 0; line < document.lineCount; line++) {
       const text = document.lineAt(line).text;
       let match;
@@ -38,26 +39,26 @@ export class RefPositionManager {
             taskId,
             range: new vscode.Range(line, match.index, line, match.index + match[0].length),
           } as TaskReference;
-
-          console.log('1. create new ref:', ref);
         } else {
-          console.log('1. update existing ref:', ref);
           // Update the range to the marker's current position
           ref.range = new vscode.Range(line, match.index, line, match.index + match[0].length);
         }
-        foundRefs.push(ref);
+        activeRefs.push(ref);
         seenTaskIds.add(taskId);
       }
     }
 
-    // Orphaned: references that are in allKnownReferences but not in foundRefs
+    // 2. Any stored reference not seen in this scan is orphaned
     for (const ref of allKnownReferences) {
-      if (!foundRefs.includes(ref) && !orphanedRefs.includes(ref)) {
-        foundRefs.push(ref); // Treat as active if not orphaned and not marker-based
+      if (ref.taskId && !seenTaskIds.has(ref.taskId)) {
+        orphanedRefs.push(ref);
+      } else if (!ref.taskId) {
+        // Unconfigured references are always active
+        activeRefs.push(ref);
       }
     }
 
-    RefPositionManager.referenceMap.set(uri, { active: foundRefs, orphaned: orphanedRefs });
+    RefPositionManager.referenceMap.set(uri, { active: activeRefs, orphaned: orphanedRefs });
   }
 
   /**

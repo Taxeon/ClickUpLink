@@ -1,11 +1,14 @@
 import * as vscode from 'vscode';
 import { ClickUpService } from '../../services/clickUpService';
 import { TaskReference } from '../../types/index';
-import { ClickUpGetTask } from './ClickUpGetTaskRef';
+import { GetTask } from './getTaskId';
+import { BuildTaskRef } from './buildTaskRef';
+import { ClickUpCodeLensDebug } from './taskRefMaintenance';
 
 export class ClickUpCodeLensTasks {
   private clickUpService: ClickUpService;
-  private taskGetter: ClickUpGetTask;
+  private taskGetter: GetTask;
+  private taskRefBuilder: BuildTaskRef;
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -13,25 +16,38 @@ export class ClickUpCodeLensTasks {
   ) {
     this.context = context;
     this.clickUpService = ClickUpService.getInstance(context);
-    this.taskGetter = new ClickUpGetTask(context);
+    this.taskGetter = new GetTask(context);
+    this.taskRefBuilder = new BuildTaskRef(context);
   }
 
+  //Used in creation of a new Task Reference
   async setupTaskReference(
     uri: vscode.Uri,
     range: vscode.Range,
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
   ): Promise<void> {
-    // Delegate the entire selection flow to ClickUpGetTask
-    await this.taskGetter.selectFolder(
+    const { selectedTask, parentTask } = await this.taskGetter.selectFolder(range, undefined);
+    if (!selectedTask) return;
+
+    console.log('select folder id:', selectedTask.id);
+    await this.taskRefBuilder.buildTaskRef(
       range,
-      undefined, // No current folder for new reference
-      this.getTaskReferenceCallback(),
+      selectedTask,
+      parentTask,
+      (uri: string, range: vscode.Range) => this.getTaskReference(uri, range),
       saveTaskReference,
       fireChangeEvent
     );
+
+    console.log('select task id:', selectedTask.id);
+    // Insert anchor comment after creating reference
+    if (selectedTask.id) {
+      await ClickUpCodeLensDebug.createAnchor(range, selectedTask.id);
+    }
   }
 
+  //used when editing task reference from the folder level down
   async changeFolder(
     range: vscode.Range,
     currentFolderId: string,
@@ -39,52 +55,74 @@ export class ClickUpCodeLensTasks {
     fireChangeEvent: () => void
   ): Promise<void> {
     // Breadcrumb click: start at folder selection, passing current folder
-    await this.taskGetter.selectFolder(
+    const { selectedTask, parentTask } = await this.taskGetter.selectFolder(range, currentFolderId);
+    if (!selectedTask) return;
+    await this.taskRefBuilder.buildTaskRef(
       range,
-      currentFolderId,
-      this.getTaskReferenceCallback(),
+      selectedTask,
+      parentTask,
+      (uri: string, range: vscode.Range) => this.getTaskReference(uri, range),
       saveTaskReference,
       fireChangeEvent
     );
+    // Update anchor comment after changing reference
+    if (selectedTask.id) {
+      await ClickUpCodeLensDebug.updateAnchor(range, selectedTask.id);
+    }
   }
 
   async changeList(
     range: vscode.Range,
     folderId: string,
     currentListId: string,
-    getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
   ): Promise<void> {
     // Breadcrumb click: start at list selection, passing current folder and list
-    await this.taskGetter.selectList(
+    const { selectedTask, parentTask } = await this.taskGetter.selectList(
       range,
       folderId,
-      currentListId,
-      getTaskReference,
+      currentListId
+    );
+    if (!selectedTask) return;
+    await this.taskRefBuilder.buildTaskRef(
+      range,
+      selectedTask,
+      parentTask,
+      (uri: string, range: vscode.Range) => this.getTaskReference(uri, range),
       saveTaskReference,
       fireChangeEvent
     );
+    if (selectedTask.id) {
+      await ClickUpCodeLensDebug.updateAnchor(range, selectedTask.id);
+    }
   }
 
   async changeTask(
     range: vscode.Range,
     listId: string,
     currentTaskId: string,
-    getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
   ): Promise<void> {
-    
     // Breadcrumb click: start at task selection, passing current list and task
-    await this.taskGetter.selectTask(
+    const { selectedTask, parentTask } = await this.taskGetter.selectTask(
       range,
       listId,
-      currentTaskId,
-      getTaskReference,
+      currentTaskId
+    );
+    if (!selectedTask) return;
+    await this.taskRefBuilder.buildTaskRef(
+      range,
+      selectedTask,
+      parentTask,
+      (uri: string, range: vscode.Range) => this.getTaskReference(uri, range),
       saveTaskReference,
       fireChangeEvent
     );
+    if (selectedTask.id) {
+      await ClickUpCodeLensDebug.updateAnchor(range, selectedTask.id);
+    }
   }
 
   async changeSubtask(
@@ -92,7 +130,6 @@ export class ClickUpCodeLensTasks {
     listId: string,
     parentTaskId: string,
     subtaskId: string,
-    getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
   ): Promise<void> {
@@ -102,21 +139,28 @@ export class ClickUpCodeLensTasks {
       vscode.window.showErrorMessage('Could not find parent task for subtask selection');
       return;
     }
-    await this.taskGetter.selectSubtask(
+    const { selectedTask } = await this.taskGetter.selectSubtask(range, parentTask, listId);
+    if (!selectedTask) return;
+    await this.taskRefBuilder.buildTaskRef(
       range,
+      selectedTask,
       parentTask,
-      listId,
-      getTaskReference,
+      (uri: string, range: vscode.Range) => this.getTaskReference(uri, range),
       saveTaskReference,
-      fireChangeEvent,
-      { parentTaskId: parentTask.id, parentTaskName: parentTask.name }
+      fireChangeEvent
     );
+    if (selectedTask.id) {
+      await ClickUpCodeLensDebug.updateAnchor(range, selectedTask.id);
+    }
   }
 
   /**
    * Helper method to create a getTaskReference callback for the taskGetter
    */
-  private getTaskReferenceCallback(): (uri: string, range: vscode.Range) => TaskReference | undefined {
+  private getTaskReferenceCallback(): (
+    uri: string,
+    range: vscode.Range
+  ) => TaskReference | undefined {
     return this.getTaskReference;
   }
 
@@ -196,10 +240,11 @@ export class ClickUpCodeLensTasks {
       await this.clickUpService.updateTaskStatus(taskId, selected.status.status);
 
       const currentRef = getTaskReference(editor.document.uri.toString(), range);
-      if (currentRef) {        currentRef.status = selected.status.status;
+      if (currentRef) {
+        currentRef.status = selected.status.status;
         currentRef.taskStatus = selected.status;
         currentRef.lastUpdated = new Date().toISOString();
-        
+
         saveTaskReference(editor.document.uri.toString(), currentRef);
         fireChangeEvent();
       }
@@ -413,7 +458,11 @@ export class ClickUpCodeLensTasks {
    * Fetches task details from ClickUp API and builds a TaskReference object, including parent, list, folder, and space.
    * Always attempts to populate all possible details, logging warnings for any missing data.
    */
-  async buildReferenceFromTaskId(taskId: string, document: vscode.TextDocument, markerRange: vscode.Range): Promise<TaskReference | undefined> {
+  async buildReferenceFromTaskId(
+    taskId: string,
+    document: vscode.TextDocument,
+    markerRange: vscode.Range
+  ): Promise<TaskReference | undefined> {
     try {
       // Fetch the main task
       const task = await this.clickUpService.getTaskDetails(taskId);

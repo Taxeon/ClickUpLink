@@ -15,6 +15,10 @@ export class TaskReferenceUtils {
     fireChangeEvent?: () => void,
     parentRef: Partial<TaskReference> = {}
   ): Promise<void> {
+    if (!range || typeof range.start?.line !== 'number' || typeof range.end?.line !== 'number') {
+      vscode.window.showErrorMessage('ClickUp: Invalid or missing range for task reference.');
+      throw new Error('ClickUp: Invalid or missing range for task reference.');
+    }
     const editor = vscode.window.activeTextEditor;
     if (!editor) return;
 

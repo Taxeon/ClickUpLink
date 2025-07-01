@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 import { ClickUpService } from '../../services/clickUpService';
 import { ClickUpCodeLensTasks } from './ClickUpCodeLensTasks';
-import { ClickUpCodeLensDebug } from './taskReferenceMaintenance';
+import { ClickUpCodeLensDebug } from './taskRefMaintenance';
 import { TaskReference } from '../../types/index';
 import { RefPositionManager } from './refPositionManagement';
-import { ClickUpBuildTaskRef } from './ClickUpBuildTaskRef';
+import { BuildTaskRef } from './buildTaskRef';
 
 export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   private static instance: ClickUpCodeLensProvider;
@@ -12,7 +12,7 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   private clickUpService: ClickUpService;
   private taskReferences: Map<string, TaskReference[]> = new Map();
   private _onDidChangeCodeLenses = new vscode.EventEmitter<void>();
-  private taskRefBuilder: ClickUpBuildTaskRef;
+  private taskRefBuilder: BuildTaskRef;
   readonly onDidChangeCodeLenses = this._onDidChangeCodeLenses.event;
 
   // Helper modules
@@ -26,7 +26,7 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       this.getTaskReference(uri, range)
     );
     this.debug = new ClickUpCodeLensDebug(context);
-    this.taskRefBuilder = new ClickUpBuildTaskRef(context);
+    this.taskRefBuilder = new BuildTaskRef(context);
   }
 
   static getInstance(context: vscode.ExtensionContext): ClickUpCodeLensProvider {
@@ -46,37 +46,33 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     // 3. Use only active references for display
     const activeReferences = RefPositionManager.getActiveReferences(document.uri.toString());
 
-    // Track which taskIds we've already processed this session to avoid repeated work
-    //if (!this._alreadyPopulated) this._alreadyPopulated = new Set<string>();
-
+    // Always attempt to build out any reference with a taskId but missing details
     for (const ref of activeReferences) {
       if (
         ref.taskId &&
         (!ref.folderId || !ref.listId || !ref.taskName)
       ) {
+        try {
         // Fetch full details and save using ClickUpGetTask.saveTaskReference
         console.log('2. Active References:', ref);
         const clickUpGetTask = new (require('./ClickUpGetTask').ClickUpGetTask)(this.context);
 
         console.log('3. clickUp Task fetch:', clickUpGetTask);
         // Fetch the full task and parent task objects as the UI flow does
-        const task = await this.clickUpService.getTaskDetails(ref.taskId);
-
-        console.log('4. task details:', task);
-        
-        if (task) {
-          await this.taskRefBuilder.buildTaskRefandSave(
-            ref.range,
-            task,
-            task.parent,
-            (uri: string, range: vscode.Range) => this.getTaskReference(uri, range),
-            (uri: string, reference: TaskReference) => this.saveTaskReference(uri, reference),
-            () => this._onDidChangeCodeLenses.fire()
-          );
-          // Mark as processed for this session
-          //this._alreadyPopulated.add(ref.taskId);
-          // Update in-memory references immediately
-          this.loadReferences();
+          const task = await this.clickUpService.getTaskDetails(ref.taskId);
+          if (task) {
+            await this.taskRefBuilder.buildTaskRef(
+              ref.range,
+              task,
+              task.parent,
+              (uri: string, range: vscode.Range) => this.getTaskReference(uri, range),
+              (uri: string, reference: TaskReference) => this.saveTaskReference(uri, reference),
+              () => this._onDidChangeCodeLenses.fire()
+            );
+            this.loadReferences();
+          }
+        } catch (err) {
+          console.error('Failed to build reference for anchor:', ref.taskId, err);
         }
       }
     }
@@ -104,6 +100,7 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   // Simplified CodeLens creation
+  // Placeholders (created by Alt+CU) have no taskId and always show the setup lens
   private async createCodeLensForReference(
     reference: TaskReference,
     document: vscode.TextDocument
@@ -118,12 +115,12 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     return reference.taskId
       ? await this.createBreadcrumbs(reference, reference.range.start.line)
       : [
-          new vscode.CodeLens(reference.range, {
+        new vscode.CodeLens(reference.range, {
             title: '$(add) Select ClickUp Task',
-            command: 'clickuplink.setupTaskReference',
-            arguments: [document.uri, reference.range],
-          }),
-        ];
+          command: 'clickuplink.setupTaskReference',
+          arguments: [document.uri, reference.range],
+        }),
+      ];
   }
 
   // Change this method to async
@@ -435,6 +432,7 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   // Streamlined cursor reference addition
+  // This creates a placeholder reference (no taskId) at the cursor line, which will show '+ Set up ClickUp Reference' in the CodeLens and as 'undefined' in the task reference pane
   async addTaskReferenceAtCursor(): Promise<void> {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
@@ -458,11 +456,13 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       return;
     }
 
+    // Only save range and workspaceFolderPath, do not set taskId yet (placeholder)
     this.saveTaskReference(uri, {
       range,
       workspaceFolderPath: this.getWorkspaceFolderPath(editor.document.uri),
     });
 
+    // Force refresh so CodeLens and task reference pane update immediately
     this._onDidChangeCodeLenses.fire();
     vscode.window.showInformationMessage(
       'ClickUp task reference added. Click the CodeLens to set it up.'
