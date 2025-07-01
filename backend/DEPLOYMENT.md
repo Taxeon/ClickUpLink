@@ -129,6 +129,16 @@ Two types of redirect URIs are supported:
    - More widely supported by OAuth providers
    - Returns the auth code in a web page for the user to copy
 
+## Using Anchor Tags for ClickUp Task References
+
+You can insert a ClickUp task reference by adding a comment to your code with the following format:
+
+```
+//Clickup:[taskid]
+```
+
+Replace `[taskid]` with the actual ID of the task. The extension will recognize this pattern and provide a link to the task.
+
 ## Troubleshooting Deployment
 
 ### Common Issues

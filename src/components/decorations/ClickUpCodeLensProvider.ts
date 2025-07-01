@@ -39,50 +39,35 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   private _alreadyPopulated: Set<string> = new Set();
 
   async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
-    // 1. Load all known references for this document
-    const allReferences = this.taskReferences.get(document.uri.toString()) || [];
-    // 2. Scan for markers and update reference positions (active/orphaned)
-    RefPositionManager.updateReferencesFromMarkers(document, allReferences);
-    // 3. Use only active references for display
+    const allKnownReferences = this.taskReferences.get(document.uri.toString()) || [];
+    RefPositionManager.updateReferencesFromMarkers(document, allKnownReferences);
+
     const activeReferences = RefPositionManager.getActiveReferences(document.uri.toString());
 
-    // Always attempt to build out any reference with a taskId but missing details
+    // Inflate any new references that have a taskId but are missing other details
     for (const ref of activeReferences) {
-      if (
-        ref.taskId &&
-        (!ref.folderId || !ref.listId || !ref.taskName)
-      ) {
-        try {
-        // Fetch full details and save using ClickUpGetTask.saveTaskReference
-        console.log('2. Active References:', ref);
-        const clickUpGetTask = new (require('./ClickUpGetTask').ClickUpGetTask)(this.context);
-
-        console.log('3. clickUp Task fetch:', clickUpGetTask);
-        // Fetch the full task and parent task objects as the UI flow does
-          const task = await this.clickUpService.getTaskDetails(ref.taskId);
-          if (task) {
-            await this.taskRefBuilder.buildTaskRef(
-              ref.range,
-              task,
-              task.parent,
-              (uri: string, range: vscode.Range) => this.getTaskReference(uri, range),
-              (uri: string, reference: TaskReference) => this.saveTaskReference(uri, reference),
-              () => this._onDidChangeCodeLenses.fire()
-            );
-            this.loadReferences();
-          }
-        } catch (err) {
-          console.error('Failed to build reference for anchor:', ref.taskId, err);
+      if (ref.taskId && !ref.taskName) {
+        const newReference = await this.tasks.buildReferenceFromTaskId(
+          ref.taskId,
+          document,
+          ref.range
+        );
+        if (newReference) {
+          this.saveTaskReference(document.uri.toString(), newReference);
         }
       }
     }
 
-    // 4. Build CodeLenses for active references
+    // After inflation, re-fetch active references to ensure they are up-to-date
+    // This is crucial because saveTaskReference updates the global state and map
+    const finalReferencesForLenses = RefPositionManager.getActiveReferences(document.uri.toString())
+      .map(activeRef => this.getTaskReference(document.uri.toString(), activeRef.range))
+      .filter((ref): ref is TaskReference => ref !== undefined);
+
     const allLenses = await Promise.all(
-      RefPositionManager.getActiveReferences(document.uri.toString()).map(ref =>
-        this.createCodeLensForReference(ref, document)
-      )
+      finalReferencesForLenses.map(ref => this.createCodeLensForReference(ref, document))
     );
+
     return allLenses.flat();
   }
 
@@ -133,15 +118,23 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     if (ref.taskId) {
       try {
         const task = await this.clickUpService.getTaskDetails(ref.taskId);
+        if (!task || !task.id) {
+          // If task is not found or invalid, do not proceed with creating task-specific lenses
+          return lenses;
+        }
         ref.description = task?.description || ref.description;
         // If subtask, fetch parent description as well if needed
         if (ref.parentTaskId) {
           const parentTask = await this.clickUpService.getTaskDetails(ref.parentTaskId);
-          ref.parentTaskName = parentTask?.name || ref.parentTaskName;
-          ref.parentTaskDescription = parentTask?.description || ref.parentTaskDescription;
+          if (parentTask && parentTask.id) {
+            ref.parentTaskName = parentTask?.name || ref.parentTaskName;
+            ref.parentTaskDescription = parentTask?.description || ref.parentTaskDescription;
+          }
         }
       } catch (err) {
-        // Ignore fetch errors, fallback to stored description
+        // If there's an error fetching the task, do not proceed with creating task-specific lenses
+        console.error(`Error fetching task ${ref.taskId}:`, err);
+        return lenses;
       }
     }
 
@@ -399,15 +392,15 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   async changeFolder(range: vscode.Range, currentFolderId: string): Promise<void> {
-    await this.executeTaskCommand(range, this.tasks.changeFolder, currentFolderId);
+    await this.executeTaskCommand(range, this.tasks.taskGetter.changeFolder, currentFolderId);
   }
 
   async changeList(range: vscode.Range, folderId: string, currentListId: string): Promise<void> {
-    await this.executeTaskCommand(range, this.tasks.changeList, folderId, currentListId);
+    await this.executeTaskCommand(range, this.tasks.taskGetter.changeList, folderId, currentListId);
   }
 
   async changeTask(range: vscode.Range, listId: string, currentTaskId: string): Promise<void> {
-    await this.executeTaskCommand(range, this.tasks.changeTask, listId, currentTaskId);
+    await this.executeTaskCommand(range, this.tasks.taskGetter.changeTask, listId, currentTaskId);
   }
 
   async changeSubtask(
@@ -416,7 +409,7 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     parentTaskId: string,
     subtaskId: string
   ): Promise<void> {
-    await this.executeTaskCommand(range, this.tasks.changeSubtask, listId, parentTaskId, subtaskId);
+    await this.executeTaskCommand(range, this.tasks.taskGetter.changeSubtask, listId, parentTaskId, subtaskId);
   }
 
   async changeStatus(range: vscode.Range, taskId: string): Promise<void> {

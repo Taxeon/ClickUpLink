@@ -1,14 +1,24 @@
 import * as vscode from 'vscode';
 import { ClickUpService } from '../../services/clickUpService';
 import { TaskReference } from '../../types/index';
+import { BuildTaskRef } from './buildTaskRef';
+import { ClickUpCodeLensDebug } from './taskRefMaintenance';
 
 export class GetTask {
   private context: vscode.ExtensionContext;
   private clickUpService: ClickUpService;
+  private taskRefBuilder: BuildTaskRef;
+  private getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined;
 
-  constructor(context: vscode.ExtensionContext) {
+  constructor(
+    context: vscode.ExtensionContext,
+    taskRefBuilder: BuildTaskRef,
+    getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined
+  ) {
     this.context = context;
-    this.clickUpService = ClickUpService.getInstance(context);    
+    this.clickUpService = ClickUpService.getInstance(context);
+    this.taskRefBuilder = taskRefBuilder;
+    this.getTaskReference = getTaskReference;
   }
 
   /**
@@ -269,5 +279,85 @@ export class GetTask {
     }
   }
 
-  
+  //used when editing task reference from the folder level down
+  async changeFolder(
+    range: vscode.Range,
+    currentFolderId: string,
+    saveTaskReference: (uri: string, reference: TaskReference) => void,
+    fireChangeEvent: () => void
+  ): Promise<void> {
+    const { selectedTask, parentTask } = await this.selectFolder(range, currentFolderId);
+    if (!selectedTask) return;
+
+    const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range);
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      saveTaskReference(editor.document.uri.toString(), newReference);
+      await ClickUpCodeLensDebug.updateAnchor(range, selectedTask.id);
+      fireChangeEvent();
+    }
+  }
+
+  async changeList(
+    range: vscode.Range,
+    folderId: string,
+    currentListId: string,
+    saveTaskReference: (uri: string, reference: TaskReference) => void,
+    fireChangeEvent: () => void
+  ): Promise<void> {
+    const { selectedTask, parentTask } = await this.selectList(range, folderId, currentListId);
+    if (!selectedTask) return;
+
+    const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range);
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      saveTaskReference(editor.document.uri.toString(), newReference);
+      await ClickUpCodeLensDebug.updateAnchor(range, selectedTask.id);
+      fireChangeEvent();
+    }
+  }
+
+  async changeTask(
+    range: vscode.Range,
+    listId: string,
+    currentTaskId: string,
+    saveTaskReference: (uri: string, reference: TaskReference) => void,
+    fireChangeEvent: () => void
+  ): Promise<void> {
+    const { selectedTask, parentTask } = await this.selectTask(range, listId, currentTaskId);
+    if (!selectedTask) return;
+
+    const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range);
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      saveTaskReference(editor.document.uri.toString(), newReference);
+      await ClickUpCodeLensDebug.updateAnchor(range, selectedTask.id);
+      fireChangeEvent();
+    }
+  }
+
+  async changeSubtask(
+    range: vscode.Range,
+    listId: string,
+    parentTaskId: string,
+    subtaskId: string,
+    saveTaskReference: (uri: string, reference: TaskReference) => void,
+    fireChangeEvent: () => void
+  ): Promise<void> {
+    const parentTask = await this.clickUpService.getTaskDetails(parentTaskId);
+    if (!parentTask) {
+      vscode.window.showErrorMessage('Could not find parent task for subtask selection');
+      return;
+    }
+    const { selectedTask } = await this.selectSubtask(range, parentTask, listId);
+    if (!selectedTask) return;
+
+    const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range);
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      saveTaskReference(editor.document.uri.toString(), newReference);
+      await ClickUpCodeLensDebug.updateAnchor(range, selectedTask.id);
+      fireChangeEvent();
+    }
+  }
 }

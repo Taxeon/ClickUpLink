@@ -1,4 +1,4 @@
-# ClickUpLink
+sessions# ClickUpLink
 
 What is ClickUpLink? A VS Code extension that provides seamless ClickUp task integration directly in your code editor with a dedicated sidebar panel and clickable breadcrumb navigation.
 
@@ -7,28 +7,34 @@ What is ClickUpLink? A VS Code extension that provides seamless ClickUp task int
 - **Dedicated Sidebar Panel**: ClickUp icon in VS Code's activity bar with Authentication, Workspace, and References views
 - **Simple Authentication**: Clear Step 1/Step 2 process with "Login" and "Enter Code" buttons in the sidebar
 - **Workspace Overview**: See your connected workspace and quick actions in the sidebar
-- **Interactive Task References**: Add ClickUp task references anywhere in your code with a simple hotkey (`Ctrl+C+U`)
+- **Interactive Task References**: Add ClickUp task references anywhere in your code with a simple hotkey (`Alt+C+U`) or
+alternately you can also use a clickup taskid by entering a comment. The extension supports various comment styles:
+
+- **Single-line comments**: Use `//Clickup:[taskid]` (TypeScript, JavaScript, C#, Go), `#Clickup:[taskid]` (Python), `--Clickup:[taskid]` (SQL), or `'Clickup:[taskid]` (VB.Net).
+- **Block comments**: Use `/*Clickup:[taskid] ... */`. The `Clickup:[taskid]` must immediately follow the opening `/*`.
+
+Replace `[taskid]` with the actual ID of your ClickUp task. The extension will recognize this pattern and provide a link to the task.
 - **Breadcrumb Navigation**: Visual breadcrumbs showing Folder → List → Task → Status with clickable links
 - **Persistent References**: Task references survive VS Code reloads and are stored across sessions
-- **References Management**: View all task references organized by file in the sidebar
-- **Real-time Updates**: Change task status, folder, or list directly from VS Code
+- **References Management**: View and navigate to all task references organized by file in the sidebar
+- **Real-time Updates**: Change task status, assignee, or task reference directly from VS Code
 
 ## 📦 Installation
 
 ### Option 1: Command Line (Recommended)
-1. Download the `clickuplink-0.1.0.vsix` file from the GitHub release
+1. Download the `clickuplink-#.#.#.vsix` file from the GitHub release
 2. Open terminal/command prompt in your Downloads folder (or wherever you saved it)
 3. Run:
 ```bash
-code --install-extension clickuplink-0.1.0.vsix
+code --install-extension clickuplink-#.#.#.vsix
 ```
 
 ### Option 2: VS Code UI
-1. Download the `clickuplink-0.1.0.vsix` file from the GitHub release
+1. Download the `clickuplink-#.#.#.vsix` file from the GitHub release
 2. Open VS Code
-3. Go to Extensions panel (`Ctrl+Shift+X`)
+3. Go to Extensions panel (`Alt+Shift+X`)
 4. Click the "..." menu → "Install from VSIX..."
-5. Select the downloaded `clickuplink-0.1.0.vsix` file
+5. Select the downloaded `clickuplink-#.#.#.vsix` file
 
 ## 🎯 Getting Started
 
@@ -45,7 +51,7 @@ Click the ClickUpLink icon in VS Code's Activity Bar (left sidebar) to open the 
 7. The Authentication section will show "✅ Connected to ClickUp"
 
 ### 3. Add Task References
-- **Hotkey**: Place your cursor anywhere and press `Ctrl+C+U` (Windows/Linux) or `Cmd+C+U` (Mac)
+- **Hotkey**: Place your cursor anywhere and press `Alt+C+U` (Windows/Linux) or `Alt+C+U` (Mac)
 - **Sidebar**: Click "Add Task Reference" in the Workspace section
 - Follow the prompts to select Folder → List → Task
 
@@ -59,8 +65,8 @@ Each element is clickable to change folders, lists, tasks, or status.
 
 ## ⌨️ Keyboard Shortcuts
 
-- `Ctrl+C+U` - Add task reference at cursor (Windows/Linux)
-- `Cmd+C+U` - Add task reference at cursor (Mac)
+- `Alt+C+U` - Add task reference at cursor (Windows/Linux)
+- `Alt+C+U` - Add task reference at cursor (Mac)
 
 ## Pizza Time
 

@@ -20,35 +20,92 @@ export class RefPositionManager {
     allKnownReferences: TaskReference[]
   ): void {
     const uri = document.uri.toString();
-    const markerRegex = /\/\/\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
+    const languageId = document.languageId;
+    let lineCommentRegex: RegExp | undefined;
+    let blockCommentRegex: RegExp | undefined;
+
+    // Determine comment style based on languageId
+    switch (languageId) {
+      case 'typescript':
+      case 'javascript':
+      case 'go':
+      case 'csharp':
+        lineCommentRegex = /(\/\/\/|\/\/)\s*clickup:\s*([a-zA-Z0-9_-]+)/g; // Supports /// and //
+        blockCommentRegex = /\/\*\s*clickup:\s*([a-zA-Z0-9_-]+)/g; // Supports /*
+        break;
+      case 'python':
+        lineCommentRegex = /#\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
+        break;
+      case 'sql': // For SQL Server
+        lineCommentRegex = /--\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
+        break;
+      case 'vb': // For VB.Net
+        lineCommentRegex = /'\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
+        break;
+      default:
+        // Default to // for unknown languages or if no specific rule applies
+        lineCommentRegex = /\/\/\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
+        blockCommentRegex = /\/\*\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
+        break;
+    }
+
     const activeRefs: TaskReference[] = [];
     const orphanedRefs: TaskReference[] = [];
     const seenTaskIds = new Set<string>();
 
-    // 1. Scan for all marker-based references in the document
-    for (let line = 0; line < document.lineCount; line++) {
-      const text = document.lineAt(line).text;
-      let match;
-      while ((match = markerRegex.exec(text))) {
-        const taskId = match[1];
-        // Try to find an existing reference for this taskId
-        let ref = allKnownReferences.find(r => r.taskId === taskId);
-        if (!ref) {
-          // If not found, create a minimal reference (to be filled in later)
-          ref = {
-            taskId,
-            range: new vscode.Range(line, match.index, line, match.index + match[0].length),
-          } as TaskReference;
-        } else {
-          // Update the range to the marker's current position
-          ref.range = new vscode.Range(line, match.index, line, match.index + match[0].length);
+    // 1. Scan for line comment markers
+    if (lineCommentRegex) {
+      for (let line = 0; line < document.lineCount; line++) {
+        const text = document.lineAt(line).text;
+        let match;
+        // Reset regex lastIndex for each line
+        lineCommentRegex.lastIndex = 0;
+        while ((match = lineCommentRegex.exec(text))) {
+          const taskId = match[2]; // Adjusted for capture group in regex
+          let ref = allKnownReferences.find(r => r.taskId === taskId);
+          if (!ref) {
+            ref = {
+              taskId,
+              range: new vscode.Range(line, match.index, line, match.index + match[0].length),
+            } as TaskReference;
+          } else {
+            ref.range = new vscode.Range(line, match.index, line, match.index + match[0].length);
+          }
+          activeRefs.push(ref);
+          seenTaskIds.add(taskId);
         }
-        activeRefs.push(ref);
-        seenTaskIds.add(taskId);
       }
     }
 
-    // 2. Any stored reference not seen in this scan is orphaned
+    // 2. Scan for block comment markers (if applicable)
+    if (blockCommentRegex) {
+      const documentText = document.getText();
+      let blockMatch;
+      // Reset regex lastIndex for the entire document
+      blockCommentRegex.lastIndex = 0;
+      while ((blockMatch = blockCommentRegex.exec(documentText))) {
+        const taskId = blockMatch[1];
+        const startPos = document.positionAt(blockMatch.index);
+        const endPos = document.positionAt(blockMatch.index + blockMatch[0].length);
+        const range = new vscode.Range(startPos, endPos);
+
+        if (!seenTaskIds.has(taskId)) {
+          let ref = allKnownReferences.find(r => r.taskId === taskId);
+          if (!ref) {
+            ref = {
+              taskId,
+              range,
+            } as TaskReference;
+          } else {
+            ref.range = range;
+          }
+          activeRefs.push(ref);
+          seenTaskIds.add(taskId);
+        }
+      }
+    }
+
+    // 3. Any stored reference not seen in this scan is orphaned
     for (const ref of allKnownReferences) {
       if (ref.taskId && !seenTaskIds.has(ref.taskId)) {
         orphanedRefs.push(ref);
