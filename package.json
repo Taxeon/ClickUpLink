@@ -280,8 +280,8 @@
     "keybindings": [
       {
         "command": "clickuplink.addTaskReference",
-        "key": "ctrl+c ctrl+u",
-        "mac": "cmd+c cmd+u",
+        "key": "alt+c alt+u",
+        "mac": "alt+c alt+u",
         "when": "editorTextFocus"
       }
     ]
