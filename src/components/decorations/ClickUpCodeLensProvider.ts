@@ -368,7 +368,7 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     const getCallback = (uri: string, range: vscode.Range) => this.getTaskReference(uri, range);
 
     await commandMethod.call(
-      this.tasks,
+      this.tasks.taskGetter,
       range,
       ...args,
       getCallback,
