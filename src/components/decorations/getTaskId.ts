@@ -19,6 +19,13 @@ export class GetTask {
     this.clickUpService = ClickUpService.getInstance(context);
     this.taskRefBuilder = taskRefBuilder;
     this.getTaskReference = getTaskReference;
+
+    // Bind methods to the current instance
+    this.selectFolder = this.selectFolder.bind(this);
+    this.selectList = this.selectList.bind(this);
+    this.selectTask = this.selectTask.bind(this);
+    this.selectSubtask = this.selectSubtask.bind(this);
+    this.createNewItem = this.createNewItem.bind(this);
   }
 
   /**

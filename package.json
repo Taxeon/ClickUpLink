@@ -1,7 +1,7 @@
 {
   "name": "clickuplink",
   "displayName": "ClickUpLink",
-  "description": "VSCode extension for ClickUp integration using React-inspired architecture.",  "version": "1.6.5",
+  "description": "VSCode extension for ClickUp integration using React-inspired architecture.",  "version": "1.6.6",
   "publisher": "clickuplink", 
   "license": "GPL-3.0-or-later",
   "author": {
