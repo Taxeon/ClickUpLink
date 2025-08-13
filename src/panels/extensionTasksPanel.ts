@@ -89,13 +89,29 @@ export function registerTaskCommands(
     async () => {
       console.log('🔄 refreshTaskReferences command triggered');
       outputChannel.appendLine('🔄 refreshTaskReferences command triggered');
+      
       try {
-        referencesProvider.refresh();
-        codeLensProvider.loadReferences(); //  reload references
-        codeLensProvider.refresh();        //  trigger CodeLens update
-        console.log('✅ Task references tree view refreshed');
-        outputChannel.appendLine('✅ Task references tree view refreshed');
-        vscode.window.showInformationMessage('Task references refreshed');
+        // Show progress indicator since this might take a while
+        await vscode.window.withProgress({
+          location: vscode.ProgressLocation.Notification,
+          title: "Refreshing task references from ClickUp...",
+          cancellable: false
+        }, async (progress) => {
+          progress.report({ message: "Fetching latest task data..." });
+          
+          // Use the unified refresh method
+          await codeLensProvider.refreshFromClickUpWithOptions({
+            silent: false,
+            checkAuth: true,
+            onSuccess: () => {
+              progress.report({ message: "Updating tree view..." });
+              referencesProvider.refresh();
+            }
+          });
+        });
+        
+        console.log('✅ Task references refreshed with fresh ClickUp data');
+        outputChannel.appendLine('✅ Task references refreshed with fresh ClickUp data');
       } catch (error) {
         console.error('❌ Error refreshing task references:', error);
         outputChannel.appendLine(`❌ Error refreshing task references: ${error}`);

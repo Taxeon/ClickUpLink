@@ -98,5 +98,5 @@ export interface TaskReference {
   parentTaskId?: string;
   parentTaskName?: string;
   description?: string;
-  parentTaskDescription?: string; // <-- Add this line
+  parentTaskDescription?: string;
 }

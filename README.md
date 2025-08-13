@@ -7,13 +7,9 @@ What is ClickUpLink? A VS Code extension that provides seamless ClickUp task int
 - **Dedicated Sidebar Panel**: ClickUp icon in VS Code's activity bar with Authentication, Workspace, and References views
 - **Simple Authentication**: Clear Step 1/Step 2 process with "Login" and "Enter Code" buttons in the sidebar
 - **Workspace Overview**: See your connected workspace and quick actions in the sidebar
-- **Interactive Task References**: Add ClickUp task references anywhere in your code with a simple hotkey (`Alt+C+U`) or
-alternately you can also use a clickup taskid by entering a comment. The extension supports various comment styles:
-
-- **Single-line comments**: Use `//Clickup:[taskid]` (TypeScript, JavaScript, C#, Go), `#Clickup:[taskid]` (Python), `--Clickup:[taskid]` (SQL), or `'Clickup:[taskid]` (VB.Net).
-- **Block comments**: Use `/*Clickup:[taskid] ... */`. The `Clickup:[taskid]` must immediately follow the opening `/*`.
-
-Replace `[taskid]` with the actual ID of your ClickUp task. The extension will recognize this pattern and provide a link to the task.
+- **Insert Task References with a Hotkey**:  (`Alt+C+U`) 
+- **Or Use Single-line comments**: Use `//Clickup:[taskid]` (TypeScript, JavaScript, C#, Go), `#Clickup:[taskid]` (Python), `--Clickup:[taskid]` (SQL), or `'Clickup:[taskid]` (VB.Net).
+- **Or Use Block comments**: Insert `Clickup:[taskid]` Immediatly after the opening of the block comment `/*Clickup:[taskid] ... */`. Replace `[taskid]` with the actual ID of your ClickUp task. The extension will recognize this pattern and provide a link to the task.
 - **Breadcrumb Navigation**: Visual breadcrumbs showing Folder → List → Task → Status with clickable links
 - **Persistent References**: Task references survive VS Code reloads and are stored across sessions
 - **References Management**: View and navigate to all task references organized by file in the sidebar
@@ -115,3 +111,6 @@ If you notice decreased performance with large numbers of references (1000+), co
 
 This extension is licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later) - see the [LICENSE](LICENSE) file for details.
 
+## 📝 Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes and release notes.

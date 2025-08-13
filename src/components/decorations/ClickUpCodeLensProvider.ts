@@ -469,6 +469,10 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
 
   public initialize(): void {
     this.loadReferences();
+    
+    // Refresh with latest ClickUp data on startup (async, don't block initialization)
+    this.refreshFromClickUpOnStartup();
+    
     vscode.workspace.onDidSaveTextDocument(document => {
       RefPositionManager.purgeOrphanedReferencesOnSave(document.uri.toString(), (uri, refs) => {
         this.taskReferences.set(uri, refs);
@@ -476,6 +480,64 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       });
       this._onDidChangeCodeLenses.fire();
     });
+  }
+
+  /**
+   * Refresh from ClickUp on startup - don't block initialization
+   */
+  private async refreshFromClickUpOnStartup(): Promise<void> {
+    await this.refreshFromClickUpWithOptions({ 
+      silent: true, 
+      checkAuth: true 
+    });
+  }
+
+  /**
+   * Unified refresh method that handles both manual and automatic refresh scenarios
+   */
+  public async refreshFromClickUpWithOptions(options: {
+    silent?: boolean;
+    checkAuth?: boolean;
+    showProgress?: boolean;
+    onSuccess?: () => void;
+  } = {}): Promise<void> {
+    const { silent = false, checkAuth = false, showProgress = false, onSuccess } = options;
+
+    try {
+      // Check authentication if requested
+      if (checkAuth) {
+        const isAuthenticated = await this.clickUpService.isAuthenticated();
+        if (!isAuthenticated) {
+          if (!silent) {
+            vscode.window.showWarningMessage('Not authenticated with ClickUp');
+          } else {
+            console.log('ℹ️ Not authenticated, skipping ClickUp refresh');
+          }
+          return;
+        }
+      }
+
+      if (!silent) {
+        console.log('🔄 Refreshing task references from ClickUp...');
+      }
+
+      // Execute the refresh
+      await this.refreshFromClickUp();
+
+      // Call success callback if provided
+      if (onSuccess) {
+        onSuccess();
+      }
+
+    } catch (error) {
+      const errorMessage = `Could not refresh from ClickUp: ${error}`;
+      if (!silent) {
+        console.error('❌', errorMessage);
+        vscode.window.showErrorMessage(`Failed to refresh task references: ${error}`);
+      } else {
+        console.warn('⚠️', errorMessage);
+      }
+    }
   }
 
   public dispose(): void {
@@ -507,6 +569,136 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       this._onDidChangeCodeLenses.fire();
     });
   }
+
+  /**
+   * Refresh all task references with fresh data from ClickUp API
+   * This fetches the latest task details (status, assignees, names, etc.) and updates stored references
+   */
+
+  async refreshFromClickUp(): Promise<void> {
+    console.log('🔄 Starting fresh data refresh from ClickUp API...');
+    
+    // Get current workspace folder paths to filter references
+    const currentWorkspacePaths = vscode.workspace.workspaceFolders?.map(folder => folder.uri.toString()) || [];
+    console.log(`📂 Current workspace folders: ${currentWorkspacePaths.length}`, currentWorkspacePaths);
+    
+    // Filter references to only those in current workspace
+    const currentWorkspaceReferences = new Map<string, TaskReference[]>();
+    
+    for (const [uri, references] of this.taskReferences.entries()) {
+      // Check if this URI belongs to any of the current workspace folders
+      const belongsToCurrentWorkspace = currentWorkspacePaths.some(workspacePath => 
+        uri.startsWith(workspacePath)
+      );
+      
+      if (belongsToCurrentWorkspace) {
+        currentWorkspaceReferences.set(uri, references);
+      }
+    }
+    
+    // Debug: Show what we're about to process
+    let totalReferences = 0;
+    for (const [uri, references] of currentWorkspaceReferences.entries()) {
+      totalReferences += references.length;
+      console.log(`📂 File ${uri}: ${references.length} references`);
+      for (const ref of references) {
+        console.log(`   - Line ${ref.range.start.line}: ${ref.taskId ? `Task ${ref.taskId} (${ref.taskName || 'unnamed'})` : 'No task set'}`);
+      }
+    }
+    console.log(`📊 Total references to process in current workspace: ${totalReferences}`);
+    
+    let updatedCount = 0;
+    let errorCount = 0;
+    
+    try {
+      // Process only current workspace references
+      for (const [uri, references] of currentWorkspaceReferences.entries()) {
+        const updatedReferences: TaskReference[] = [];
+        
+        for (const ref of references) {
+          if (ref.taskId) {
+            try {
+              console.log(`🔍 Refreshing task ${ref.taskId} for ${uri}...`);
+              
+              // Fetch latest task details from ClickUp API
+              const freshTask = await this.clickUpService.getTaskDetails(ref.taskId);
+              
+              if (freshTask && freshTask.id) {
+                // Update the reference with fresh data
+                const updatedRef: TaskReference = {
+                  ...ref,
+                  taskName: freshTask.name,
+                  description: freshTask.description,
+                  status: freshTask.status?.status || ref.status,
+                  taskStatus: freshTask.status || ref.taskStatus,
+                  assignee: freshTask.assignees && freshTask.assignees.length > 0 ? freshTask.assignees[0] : undefined,
+                  assignees: freshTask.assignees || [],
+                  lastUpdated: new Date().toISOString(),
+                  // Update hierarchy info if available
+                  listId: freshTask.list?.id || ref.listId,
+                  listName: freshTask.list?.name || ref.listName,
+                  folderId: freshTask.folder?.id || ref.folderId,
+                  folderName: freshTask.folder?.name || ref.folderName,
+                };
+                
+                // If this is a subtask, also refresh parent task info
+                if (ref.parentTaskId) {
+                  try {
+                    const parentTask = await this.clickUpService.getTaskDetails(ref.parentTaskId);
+                    if (parentTask && parentTask.id) {
+                      updatedRef.parentTaskName = parentTask.name;
+                      updatedRef.parentTaskDescription = parentTask.description;
+                    }
+                  } catch (parentError) {
+                    console.warn(`⚠️ Could not refresh parent task ${ref.parentTaskId}:`, parentError);
+                  }
+                }
+                
+                updatedReferences.push(updatedRef);
+                updatedCount++;
+                console.log(`✅ Successfully refreshed task ${ref.taskId}`);
+              } else {
+                console.warn(`⚠️ Task ${ref.taskId} not found or invalid, keeping existing reference`);
+                updatedReferences.push(ref);
+              }
+            } catch (error) {
+              console.error(`❌ Failed to refresh task ${ref.taskId}:`, error);
+              // Keep the existing reference if API call fails
+              updatedReferences.push(ref);
+              errorCount++;
+            }
+          } else {
+            // No taskId, keep the unconfigured reference as-is
+            updatedReferences.push(ref);
+          }
+        }
+        
+        // Update the references for this URI
+        this.taskReferences.set(uri, updatedReferences);
+      }
+      
+      // Persist the updated references
+      this.persistReferences();
+      
+      // Fire events to refresh UI
+      this._onDidChangeCodeLenses.fire();
+      
+      console.log(`🎉 Refresh complete: Updated ${updatedCount} task references, ${errorCount} errors`);
+      
+      if (updatedCount > 0) {
+        vscode.window.showInformationMessage(
+          `Refreshed ${updatedCount} task references from ClickUp${errorCount > 0 ? ` (${errorCount} errors)` : ''}`
+        );
+      } else {
+        vscode.window.showInformationMessage('No task references to refresh');
+      }
+      
+    } catch (error) {
+      console.error('❌ Critical error during refresh from ClickUp:', error);
+      vscode.window.showErrorMessage(`Failed to refresh from ClickUp: ${error}`);
+    }
+  }
+
 
   private getWorkspaceFolderPath(uri: vscode.Uri): string | undefined {
     return vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath;
