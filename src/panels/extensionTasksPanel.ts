@@ -16,7 +16,13 @@ export function registerTaskCommands(
     'clickuplink.setupTaskReference',
     async (uri: vscode.Uri, range: vscode.Range) => {
       console.log('🎯 setupTaskReference command called');
-      await codeLensProvider.setupTaskReference(uri, range);
+      try {
+        await codeLensProvider.setupTaskReference(uri, range);
+        outputChannel.appendLine('✅ setupTaskReference completed successfully');
+      } catch (error) {
+        outputChannel.appendLine(`❌ ERROR in setupTaskReference: ${error}`);
+        console.error('ERROR in setupTaskReference:', error);
+      }
     }
   ));
 
@@ -30,6 +36,7 @@ export function registerTaskCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'clickuplink.changeList',
     async (range: vscode.Range, folderId: string, listId: string) => {
+      console.log('🎯 change list range:',range, '|listid:',listId, '|folderId:', folderId);
       await codeLensProvider.changeList(range, folderId, listId);
     }
   ));
@@ -37,6 +44,7 @@ export function registerTaskCommands(
   context.subscriptions.push(vscode.commands.registerCommand(
     'clickuplink.changeTask',
     async (range: vscode.Range, listId: string, taskId: string) => {
+      console.log('🎯 change Task range:',range, '|listid:',listId, '|taskId:', taskId);
       await codeLensProvider.changeTask(range, listId, taskId);
     }
   ));
@@ -60,7 +68,9 @@ export function registerTaskCommands(
     async (taskId: string) => {
       await codeLensProvider.openInClickUp(taskId);
     }
-  ));  // Add command to create a task reference at cursor position
+  ));  
+  
+  // Add command to create a task reference at cursor position
   context.subscriptions.push(vscode.commands.registerCommand(
     'clickuplink.addTaskReference',
     async () => {
@@ -99,6 +109,11 @@ export function registerTaskCommands(
         }, async (progress) => {
           progress.report({ message: "Fetching latest task data..." });
           
+          // First clean up any potential duplicate references 
+          // (especially important for JSX/TSX files)
+          progress.report({ message: "Cleaning up any duplicate references..." });
+          codeLensProvider.cleanupDuplicateReferences();
+          
           // Use the unified refresh method
           await codeLensProvider.refreshFromClickUpWithOptions({
             silent: false,
@@ -109,7 +124,7 @@ export function registerTaskCommands(
             }
           });
         });
-        
+
         console.log('✅ Task references refreshed with fresh ClickUp data');
         outputChannel.appendLine('✅ Task references refreshed with fresh ClickUp data');
       } catch (error) {

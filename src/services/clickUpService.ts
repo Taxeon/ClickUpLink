@@ -4,6 +4,10 @@
 import * as vscode from 'vscode';
 import { apiRequest } from '../hooks/useApi';
 import { checkAuth } from '../hooks/useAuth';
+import { getAccessToken } from '../utils/tokenStorage';
+import { httpClient } from '../utils/httpClient';
+
+const CLICKUP_API_BASE_URL = 'https://api.clickup.com/api/v2';
 
 export class ClickUpService {
   private readonly context: vscode.ExtensionContext;
@@ -192,7 +196,17 @@ export class ClickUpService {
     console.log(`🔧 ClickUpService.createTask taskData:`, taskData);
 
     try {
-      const result = await apiRequest(this.context, 'post', `list/${listId}/task`, taskData);
+      // Make the API request with a custom timeout of 45 seconds for task creation
+      const result = await httpClient.request(`${CLICKUP_API_BASE_URL}/list/${listId}/task`, {
+        method: 'POST',
+        data: taskData,
+        timeout: 45000, // 45 second timeout specifically for task creation
+        headers: {
+          Authorization: `Bearer ${await getAccessToken(this.context)}`,
+          'Content-Type': 'application/json',
+        },
+      }).then(response => response.data);
+      
       console.log('🔧 ClickUpService.createTask result:', result);
       return result;
     } catch (error) {
@@ -227,12 +241,17 @@ export class ClickUpService {
 
     try {
       // Create the subtask using the regular task creation endpoint but with parent field
-      const result = await apiRequest(
-        this.context,
-        'post',
-        `list/${parentTask.list.id}/task`,
-        taskData
-      );
+      // Use httpClient directly with a longer timeout for subtasks
+      const result = await httpClient.request(`${CLICKUP_API_BASE_URL}/list/${parentTask.list.id}/task`, {
+        method: 'POST',
+        data: taskData,
+        timeout: 60000, // 60 second timeout for subtasks (they take longer)
+        headers: {
+          Authorization: `Bearer ${await getAccessToken(this.context)}`,
+          'Content-Type': 'application/json',
+        },
+      }).then(response => response.data);
+      
       console.log('🔧 ClickUpService.createSubtask result:', result);
       return result;
     } catch (error) {

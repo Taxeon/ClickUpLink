@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { TaskReference } from '../../types/index';
+import { RefPositionManager } from './refPositionManagement';
 
 export class ClickUpCodeLensDebug {
   private context: vscode.ExtensionContext;
@@ -313,15 +314,16 @@ export class ClickUpCodeLensDebug {
     }
 
     try {
-      const data = JSON.parse(serialized);
+      const taskReferences = JSON.parse(serialized);
       const currentWorkspacePath = this.getCurrentWorkspaceFolderPath();
+      const completedTaskRefs: any[] = [];
 
       // Count references before cleanup
       let totalRefs = 0;
       let completedRefs = 0;
 
-      for (const uri in data) {
-        const refs = data[uri] || [];
+      for (const uri in taskReferences) {
+        const refs = taskReferences[uri] || [];
         for (const ref of refs) {
           // Only count references in current workspace
           if (
@@ -360,9 +362,13 @@ export class ClickUpCodeLensDebug {
         'Cancel'
       );
 
-      result.then(choice => {
+      result.then(async choice => {
         if (choice === 'Clear Completed References') {
-          this.performClearCompletedReferences(data, currentWorkspacePath, fireChangeEvent);
+          await this.performClearCompletedReferences(taskReferences, currentWorkspacePath, fireChangeEvent);
+          
+          // Trigger a refresh of task references via extension command
+          // This ensures any removed anchors are properly reflected in the data model
+          vscode.commands.executeCommand('clickuplink.refreshTaskReferences');
         }
       });
     } catch (error) {
@@ -370,19 +376,23 @@ export class ClickUpCodeLensDebug {
     }
   }
 
-  private performClearCompletedReferences(
-    data: any,
+  private async performClearCompletedReferences(
+    taskReferences: any,
     currentWorkspacePath: string | undefined,
     fireChangeEvent: () => void
-  ): void {
+  ): Promise<void> {
     try {
-      const cleanedData: any = {};
+      // Output channel for logging
+      const outputChannel = vscode.window.createOutputChannel('ClickUp Link Debug');
+      outputChannel.appendLine('🧹 Starting removal of completed task references...');
+      
       let removedCount = 0;
+      const completedTaskRefs: Array<{ uri: string; ref: any; taskId: string }> = [];
 
-      for (const uri in data) {
-        const refs = data[uri] || [];
-        const filteredRefs: any[] = [];
-
+      // First, collect all completed task references
+      for (const uri in taskReferences) {
+        const refs = taskReferences[uri] || [];        
+        
         for (const ref of refs) {
           const status = (ref.taskStatus?.status || ref.status || '').toLowerCase();
           const isCompleted =
@@ -391,33 +401,83 @@ export class ClickUpCodeLensDebug {
             status.includes('closed') ||
             status.includes('resolved');
 
-          // Keep reference if:
-          // 1. Not completed, OR
-          // 2. Not in current workspace (if workspace filtering is active)
           const inCurrentWorkspace =
             !currentWorkspacePath ||
             !ref.workspaceFolderPath ||
             ref.workspaceFolderPath === currentWorkspacePath;
 
-          if (!isCompleted || !inCurrentWorkspace) {
-            filteredRefs.push(ref);
-          } else {
-            removedCount++;
+          if (isCompleted && inCurrentWorkspace) {
+            // Add to the list of references to remove
+            completedTaskRefs.push({
+              uri,
+              ref,
+              taskId: ref.taskId || ''
+            });
           }
-        }
-
-        if (filteredRefs.length > 0) {
-          cleanedData[uri] = filteredRefs;
         }
       }
 
-      this.context.globalState.update('clickup.taskReferences', JSON.stringify(cleanedData));
-      fireChangeEvent();
+      // If no completed references were found, show a message and return
+      if (completedTaskRefs.length === 0) {
+        const workspaceInfo = currentWorkspacePath ? ' in current workspace' : '';
+        vscode.window.showInformationMessage(`No completed task references found${workspaceInfo}.`);
+        return;
+      }
+      
+      outputChannel.appendLine(`🔍 Found ${completedTaskRefs.length} completed task references to remove`);
+      
+      // Group references by URI for more efficient processing
+      const referencesByUri: Record<string, Array<{ref: any; taskId: string}>> = {};
+      for (const item of completedTaskRefs) {
+        if (!referencesByUri[item.uri]) {
+          referencesByUri[item.uri] = [];
+        }
+        referencesByUri[item.uri].push({
+          ref: item.ref,
+          taskId: item.taskId
+        });
+      }
+      
+      // Process each file separately
+      for (const uri in referencesByUri) {
+        try {
+          const refs = referencesByUri[uri];
+          outputChannel.appendLine(`📄 Processing file: ${uri} with ${refs.length} references`);
+          
+          // Sort refs in descending order by line number to prevent line shifting issues
+          refs.sort((a, b) => {
+            const lineA = a.ref.range?.start?.line || 0;
+            const lineB = b.ref.range?.start?.line || 0;
+            return lineB - lineA; // Reverse sort (highest line number first)
+          });
+          
+          // Remove clickup anchors one by one, from bottom to top
+          for (const { ref, taskId } of refs) {
+            try {
+              await this.removeClickupAnchor(uri, ref, taskId);
+              removedCount++;
+            } catch (error) {
+              outputChannel.appendLine(`⚠️ Error removing anchor at line ${ref.range?.start?.line}: ${error}`);
+            }
+          }
+        } catch (fileError) {
+          outputChannel.appendLine(`❌ Error processing file ${uri}: ${fileError}`);
+        }
+      }
 
+      outputChannel.appendLine(`✅ Removed ${removedCount} anchors from documents`);
+      
+      // Run a refresh to update the references list based on the remaining anchors
+      // This is important - we're not updating the references data directly anymore
+      fireChangeEvent();
+      
+      // Show success message
       const workspaceInfo = currentWorkspacePath ? ` from current workspace` : '';
       vscode.window.showInformationMessage(
         `Successfully removed ${removedCount} completed task references${workspaceInfo}.`
       );
+      
+      outputChannel.appendLine('🎉 Completed reference removal process');
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to clear completed references: ${error}`);
     }
@@ -436,6 +496,7 @@ export class ClickUpCodeLensDebug {
     }
 
     try {
+      // Parse the stored references data
       const data = JSON.parse(serialized);
       const refs = data[uri] || [];
 
@@ -451,6 +512,9 @@ export class ClickUpCodeLensDebug {
         return;
       }
 
+      // Store the taskId for anchor removal
+      const taskId = referenceToDelete.taskId;
+
       // Remove the reference from stored data
       const filteredRefs = refs.filter((ref: any) => {
         const refLine = ref.range?.start?.line || 0;
@@ -465,52 +529,70 @@ export class ClickUpCodeLensDebug {
         delete data[uri];
       }
 
+      // Save changes to global state
       this.context.globalState.update('clickup.taskReferences', JSON.stringify(data));
 
-      // Also remove any comment text from the document if it exists
-      this.removeCommentTextFromDocument(uri, referenceToDelete);
-
-      // Fire the change event to refresh CodeLenses and sidebar
-      fireChangeEvent();
+      // Remove the anchor tag from the document
+      this.removeClickupAnchor(uri, referenceToDelete, taskId)
+        .catch(error => {
+          console.error('Error removing clickup anchor:', error);
+        })
+        .finally(() => {
+          // Always fire the change event to refresh CodeLenses and sidebar
+          fireChangeEvent();
+        });
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to delete reference: ${error}`);
+      // Still try to fire change event to avoid UI getting out of sync
+      fireChangeEvent();
     }
   }
 
-  private async removeCommentTextFromDocument(uri: string, reference: any): Promise<void> {
+  private async removeClickupAnchor(uri: string, reference: any, taskId: string): Promise<void> {
     try {
-      // Check if there's comment text to remove
-      if (!reference.commentText) {
-        return; // Nothing to remove from document
-      }
-
       // Try to open the document
       const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
       const editor = await vscode.window.showTextDocument(document);
-
-      // Get the line where the reference is located
-      const lineNumber = reference.range?.start?.line || 0;
-      const line = document.lineAt(lineNumber);
-      const lineText = line.text;
-
-      // Check if the line contains the comment text
-      if (lineText.includes(reference.commentText)) {
-        // Create edit to remove the comment line
+      
+      // First look for the clickup anchor tag near the reference position
+      const range = reference.range ? 
+        new vscode.Range(
+          reference.range.start.line, 
+          reference.range.start.character, 
+          reference.range.end.line, 
+          reference.range.end.character
+        ) : 
+        new vscode.Range(0, 0, 0, 0);
+      
+      // Create an output channel for debugging
+      const outputChannel = vscode.window.createOutputChannel('ClickUp Link Debug');
+      outputChannel.appendLine(`Attempting to remove clickup anchor for task ${taskId} at line ${range.start.line}`);
+      
+      // Look for clickup marker near the reference position
+      const markerInfo = RefPositionManager.findClickupMarkerNearPosition(document, range);
+      
+      if (markerInfo) {
+        outputChannel.appendLine(`Found clickup marker at line ${markerInfo.line}: "${markerInfo.match[0]}"`);
+        
+        // Create edit to remove the entire line with the clickup tag
         const edit = new vscode.WorkspaceEdit();
         const lineRange = new vscode.Range(
-          lineNumber,
+          markerInfo.line,
           0,
-          lineNumber + 1,
+          markerInfo.line + 1,
           0 // Include the newline
         );
         edit.delete(document.uri, lineRange);
-
+        
         // Apply the edit
         await vscode.workspace.applyEdit(edit);
+        outputChannel.appendLine(`✅ Removed clickup anchor at line ${markerInfo.line}`);
+      } else {
+        outputChannel.appendLine(`⚠️ No clickup anchor found near line ${range.start.line}`);
       }
     } catch (error) {
-      console.error('Failed to remove comment text from document:', error);
-      // Don't show error to user since the main deletion was successful
+      console.error('Failed to remove clickup anchor from document:', error);
+      throw error; // Propagate the error to be caught in the calling method
     }
   }
 
@@ -524,11 +606,31 @@ export class ClickUpCodeLensDebug {
     try {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
+      const document = editor.document;
       const anchorLine = range.start.line;
-      const anchorText = `// clickup:${taskId}`;
+      
+      // Determine the appropriate comment style based on file type
+      let anchorText = `// clickup:${taskId}`;
+      
+      // For JSX/TSX files, make sure we use the proper comment format
+      const languageId = document.languageId.toLowerCase();
+      console.log(`Creating anchor for language: ${languageId}`);
+      
+      if (languageId === 'javascriptreact' || 
+          languageId === 'typescriptreact' || 
+          languageId === 'jsx' || 
+          languageId === 'tsx' ||
+          document.fileName.toLowerCase().endsWith('.jsx') ||
+          document.fileName.toLowerCase().endsWith('.tsx')) {
+        // For React files, we'll still use line comments but log this special case
+        console.log(`Using JSX/TSX specific comment for file: ${document.fileName}`);
+      }
+      
       await editor.edit(editBuilder => {
         editBuilder.insert(new vscode.Position(anchorLine, 0), anchorText + '\n');
       });
+      
+      console.log(`✅ Successfully created anchor: ${anchorText}`);
     } catch (err) {
       console.error('Error in createAnchor:', err);
     }
@@ -540,7 +642,7 @@ export class ClickUpCodeLensDebug {
    * @param range The range where the anchor should be updated above.
    * @param newTaskId The new ClickUp Task ID to update in the anchor.
    */
-  static async updateAnchor(
+    static async updateAnchor(
     range: vscode.Range,
     newTaskId: string
   ): Promise<void> {
@@ -548,21 +650,54 @@ export class ClickUpCodeLensDebug {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
       const document = editor.document;
-      const anchorLine = range.start.line - 1;
-      if (anchorLine < 0) return;
-      const lineText = document.lineAt(anchorLine).text;
-      const anchorRegex = /^\/\/\s*clickup:.*$/i;
-      if (anchorRegex.test(lineText)) {
-        const newAnchorText = `// clickup:${newTaskId}`;
+      const outputChannel = vscode.window.createOutputChannel('ClickUp Link Debug');
+      
+      outputChannel.appendLine(`Attempting to update anchor with task ID ${newTaskId} at line ${range.start.line}`);
+      
+      // Use RefPositionManager to find an existing clickup marker
+      const markerInfo = RefPositionManager.findClickupMarkerNearPosition(document, range);
+      
+      if (markerInfo) {
+        // Found anchor, prepare to update it
+        const { line, match, commentStyle } = markerInfo;
+        const oldTaskId = match[2];
+        const startIdx = match.index;
+        const endIdx = startIdx + match[0].length;
+        const lineText = document.lineAt(line).text;
+        
+        outputChannel.appendLine(`Found anchor match at line ${line}, pos ${startIdx}-${endIdx}`);
+        outputChannel.appendLine(`Comment style: "${commentStyle}", Old task ID: "${oldTaskId}"`);
+        
+        // Generate the replacement with same comment style but new task ID
+        const spacer = lineText.substring(startIdx + commentStyle.length, startIdx + commentStyle.length + 1) === ' ' ? ' ' : '';
+        const newAnchorText = `${commentStyle}${spacer}clickup:${newTaskId}`;
+        
+        outputChannel.appendLine(`Replacing with: "${newAnchorText}"`);
+        
+        // Replace just the clickup tag part, not the whole line
         await editor.edit(editBuilder => {
           editBuilder.replace(
-            new vscode.Range(anchorLine, 0, anchorLine, lineText.length),
+            new vscode.Range(line, startIdx, line, endIdx),
             newAnchorText
           );
         });
+        
+        outputChannel.appendLine(`✅ Updated clickup anchor from ${oldTaskId} to ${newTaskId} at line ${line}`);
+      } else {
+        // No anchor found, create a new one at the current line
+        const currentLine = range.start.line;
+        outputChannel.appendLine(`No existing anchor found, creating new one with task ID ${newTaskId} at line ${currentLine}`);
+        const anchorText = `// clickup:${newTaskId}`;
+        await editor.edit(editBuilder => {
+          editBuilder.insert(new vscode.Position(currentLine, 0), anchorText + '\n');
+        });
+        outputChannel.appendLine(`✅ Created new anchor: "${anchorText}" at line ${currentLine}`);
       }
     } catch (err) {
       console.error('Error in updateAnchor:', err);
+      const outputChannel = vscode.window.createOutputChannel('ClickUp Link Debug');
+      outputChannel.appendLine(`❌ Error in updateAnchor: ${err}`);
+      outputChannel.show(true);
     }
   }
 }

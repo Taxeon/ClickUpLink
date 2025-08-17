@@ -137,9 +137,25 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenDat
   }
   
   try {
+    console.log(`🔄 Refreshing token using refresh token (first 5 chars: ${refreshToken.substring(0, 5)}...)`);
+    
+    // First check if auth service is available
+    try {
+      await validateAuthService();
+    } catch (healthCheckError) {
+      console.error('❌ Auth service health check failed:', healthCheckError);
+      throw new Error('Authentication service is currently unavailable');
+    }
+    
     // Use the secure backend service to refresh the token
     const response = await httpClient.post(`${AUTH_SERVICE_URL}/api/token-refresh`, {
       refreshToken
+    });
+
+    console.log('✅ Refresh token response received', {
+      status: response.status,
+      hasData: !!response.data,
+      hasAccessToken: !!response.data.access_token
     });
 
     // Extract with defaults for missing fields
@@ -148,19 +164,40 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenDat
     const expires_in = response.data.expires_in || 3600; // Default to 1 hour
     
     if (!access_token) {
-      throw new Error('Access token missing in refresh response');
+      console.error('❌ Access token missing in refresh response:', response.data);
+      throw new Error(`Access token missing in refresh response: ${JSON.stringify(response.data)}`);
     }
+    
+    console.log('✅ Successfully refreshed token with expiry in', expires_in, 'seconds');
     
     return {
       accessToken: access_token,
       refreshToken: refresh_token || refreshToken, // Some OAuth providers don't return a new refresh token
       expiresAt: Date.now() + (expires_in * 1000)
     };
-  } catch (error) {
-    console.error('Error refreshing token:', error);
-    if (error instanceof Error && error.message.includes('HTTP')) {
+  } catch (error: any) {
+    console.error('❌ Error refreshing token:', error);
+    
+    // Enhanced error information for debugging
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      console.error('Response error details:', {
+        status: error.response.status,
+        data: error.response.data,
+        headers: error.response.headers
+      });
+      
+      const serverErrorMessage = error.response.data?.error || error.response.data?.message || 'Unknown server error';
+      throw new Error(`Failed to refresh token (${error.response.status}): ${serverErrorMessage}`);
+    } 
+    else if (error.request) {
+      // The request was made but no response was received
+      console.error('No response received for refresh token request');
+      throw new Error('Failed to refresh token: No response from authentication server');
+    } 
+    else {
+      // Something happened in setting up the request
       throw new Error(`Failed to refresh token: ${error.message}`);
     }
-    throw new Error('Failed to refresh token: Network error');
   }
 }

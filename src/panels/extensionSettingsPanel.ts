@@ -69,6 +69,54 @@ export function registerSettingsCommands(
       vscode.window.showInformationMessage('Not connected to ClickUp. Use the login command to connect.');
     }
   }));
+  
+  // Add command to manually refresh the token
+  context.subscriptions.push(vscode.commands.registerCommand('clickuplink.refreshToken', async () => {
+    try {
+      outputChannel.appendLine('🔄 Manual token refresh requested...');
+      outputChannel.show();
+      
+      const { getTokenData, refreshAccessToken, setTokens } = await import('../utils/tokenStorage');
+      
+      // Check if we have a token to refresh
+      const tokenData = await getTokenData(context);
+      if (!tokenData || !tokenData.refreshToken) {
+        vscode.window.showErrorMessage('No refresh token available. Please login again.');
+        outputChannel.appendLine('❌ No refresh token available for manual refresh');
+        return;
+      }
+      
+      // Show progress notification
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: "Refreshing ClickUp token...",
+        cancellable: false
+      }, async (progress) => {
+        try {
+          outputChannel.appendLine(`🔄 Attempting to refresh token...`);
+          progress.report({ message: "Contacting ClickUp API..." });
+          
+          const newTokenData = await refreshAccessToken(tokenData.refreshToken);
+          
+          // Save the new tokens
+          await setTokens(context, newTokenData);
+          
+          const timeLeft = Math.round((newTokenData.expiresAt - Date.now()) / 1000 / 60);
+          outputChannel.appendLine(`✅ Token refreshed successfully! Valid for ${timeLeft} minutes.`);
+          vscode.window.showInformationMessage(`ClickUp token refreshed successfully! Valid for ${timeLeft} minutes.`);
+          
+          // Refresh views
+          vscode.commands.executeCommand('clickup.refreshAllViews');
+        } catch (error) {
+          outputChannel.appendLine(`❌ Manual token refresh failed: ${error}`);
+          vscode.window.showErrorMessage(`Failed to refresh token: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      });
+    } catch (error) {
+      outputChannel.appendLine(`❌ Error initializing token refresh: ${error}`);
+      vscode.window.showErrorMessage(`Error initializing token refresh: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }));
 
   context.subscriptions.push(vscode.commands.registerCommand('clickuplink.enableTestMode', async () => {
     const { enableTestMode } = await import('../utils/testMode');

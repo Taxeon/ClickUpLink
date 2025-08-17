@@ -47,14 +47,14 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     // Inflate any new references that have a taskId but are missing other details
     for (const ref of activeReferences) {
       if (ref.taskId && !ref.taskName) {
-        const newReference = await this.tasks.buildReferenceFromTaskId(
-          ref.taskId,
-          document,
-          ref.range
-        );
-        if (newReference) {
-          this.saveTaskReference(document.uri.toString(), newReference);
-        }
+          const newReference = await this.tasks.buildReferenceFromTaskId(
+            ref.taskId,
+            document,
+            ref.range
+          );
+          if (newReference) {
+            this.saveTaskReference(document.uri.toString(), newReference);
+          }
       }
     }
 
@@ -282,10 +282,10 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     return this.taskReferences
       .get(uri)
       ?.find(
-        ref =>
-          ref.range.start.line === range.start.line &&
-          ref.range.start.character === range.start.character
-      );
+      ref => 
+        ref.range.start.line === range.start.line &&
+        ref.range.start.character === range.start.character
+    );
   }
 
   private saveTaskReference(uri: string, reference: TaskReference): void {
@@ -473,6 +473,7 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     // Refresh with latest ClickUp data on startup (async, don't block initialization)
     this.refreshFromClickUpOnStartup();
     
+    // Setup event response to document saves to update changes to anchor comments
     vscode.workspace.onDidSaveTextDocument(document => {
       RefPositionManager.purgeOrphanedReferencesOnSave(document.uri.toString(), (uri, refs) => {
         this.taskReferences.set(uri, refs);
@@ -572,47 +573,72 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
 
   /**
    * Refresh all task references with fresh data from ClickUp API
-   * This fetches the latest task details (status, assignees, names, etc.) and updates stored references
+   * This scans workspace documents for ClickUp references, then fetches fresh data from ClickUp API
+   * This ensures we only refresh references that actually exist in the code
    */
 
   async refreshFromClickUp(): Promise<void> {
     console.log('🔄 Starting fresh data refresh from ClickUp API...');
     
-    // Get current workspace folder paths to filter references
-    const currentWorkspacePaths = vscode.workspace.workspaceFolders?.map(folder => folder.uri.toString()) || [];
-    console.log(`📂 Current workspace folders: ${currentWorkspacePaths.length}`, currentWorkspacePaths);
+    // Step 1: Get all text documents in the workspace
+    const allDocuments = await vscode.workspace.findFiles('**/*.*', '**/node_modules/**');
+    console.log(`📂 Found ${allDocuments.length} documents in workspace`);
     
-    // Filter references to only those in current workspace
-    const currentWorkspaceReferences = new Map<string, TaskReference[]>();
+    // Step 2: Collect active references from all documents by scanning for anchor tags
+    const activeReferences = new Map<string, TaskReference[]>();
+    const uniqueTaskIds = new Set<string>();
     
+    // Track existing references to preserve metadata that might not be in the anchor
+    const existingReferences = new Map<string, TaskReference>();
     for (const [uri, references] of this.taskReferences.entries()) {
-      // Check if this URI belongs to any of the current workspace folders
-      const belongsToCurrentWorkspace = currentWorkspacePaths.some(workspacePath => 
-        uri.startsWith(workspacePath)
-      );
-      
-      if (belongsToCurrentWorkspace) {
-        currentWorkspaceReferences.set(uri, references);
+      for (const ref of references) {
+        if (ref.taskId) {
+          existingReferences.set(ref.taskId, ref);
+        }
       }
     }
     
-    // Debug: Show what we're about to process
-    let totalReferences = 0;
-    for (const [uri, references] of currentWorkspaceReferences.entries()) {
-      totalReferences += references.length;
-      console.log(`📂 File ${uri}: ${references.length} references`);
-      for (const ref of references) {
-        console.log(`   - Line ${ref.range.start.line}: ${ref.taskId ? `Task ${ref.taskId} (${ref.taskName || 'unnamed'})` : 'No task set'}`);
+    // Process each document to find ClickUp reference markers
+    for (const docUri of allDocuments) {
+      try {
+        const document = await vscode.workspace.openTextDocument(docUri);
+        const uri = document.uri.toString();
+        
+        // Get all known references for this document from our storage
+        const allKnownReferences = this.taskReferences.get(uri) || [];
+        
+        // Use RefPositionManager to find all active references in this document
+        RefPositionManager.updateReferencesFromMarkers(document, allKnownReferences);
+        const documentActiveRefs = RefPositionManager.getActiveReferences(uri);
+        
+        if (documentActiveRefs.length > 0) {
+          console.log(`� Found ${documentActiveRefs.length} active references in ${uri}`);
+          activeReferences.set(uri, documentActiveRefs);
+          
+          // Collect unique task IDs to refresh
+          for (const ref of documentActiveRefs) {
+            if (ref.taskId) {
+              uniqueTaskIds.add(ref.taskId);
+              
+              // Log the found reference
+              console.log(`   - Line ${ref.range.start.line}: Task ${ref.taskId} (${ref.taskName || 'unnamed'})`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`❌ Error processing document ${docUri.toString()}:`, error);
       }
     }
-    console.log(`📊 Total references to process in current workspace: ${totalReferences}`);
+    
+    console.log(`📊 Total documents with references: ${activeReferences.size}`);
+    console.log(`📊 Total unique task IDs to refresh: ${uniqueTaskIds.size}`);
     
     let updatedCount = 0;
     let errorCount = 0;
     
     try {
-      // Process only current workspace references
-      for (const [uri, references] of currentWorkspaceReferences.entries()) {
+      // Process only documents with active references
+      for (const [uri, references] of activeReferences.entries()) {
         const updatedReferences: TaskReference[] = [];
         
         for (const ref of references) {
@@ -624,33 +650,41 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
               const freshTask = await this.clickUpService.getTaskDetails(ref.taskId);
               
               if (freshTask && freshTask.id) {
+                // Start with existing reference data if available to preserve metadata
+                const baseRef = existingReferences.get(ref.taskId) || ref;
+                
                 // Update the reference with fresh data
                 const updatedRef: TaskReference = {
-                  ...ref,
+                  ...baseRef,
+                  // Always use the current position from the document scan
+                  range: ref.range,
                   taskName: freshTask.name,
                   description: freshTask.description,
-                  status: freshTask.status?.status || ref.status,
-                  taskStatus: freshTask.status || ref.taskStatus,
+                  status: freshTask.status?.status || baseRef.status,
+                  taskStatus: freshTask.status || baseRef.taskStatus,
                   assignee: freshTask.assignees && freshTask.assignees.length > 0 ? freshTask.assignees[0] : undefined,
                   assignees: freshTask.assignees || [],
                   lastUpdated: new Date().toISOString(),
                   // Update hierarchy info if available
-                  listId: freshTask.list?.id || ref.listId,
-                  listName: freshTask.list?.name || ref.listName,
-                  folderId: freshTask.folder?.id || ref.folderId,
-                  folderName: freshTask.folder?.name || ref.folderName,
+                  listId: freshTask.list?.id || baseRef.listId,
+                  listName: freshTask.list?.name || baseRef.listName,
+                  folderId: freshTask.folder?.id || baseRef.folderId,
+                  folderName: freshTask.folder?.name || baseRef.folderName,
+                  // Ensure we have the workspace folder path
+                  workspaceFolderPath: this.getWorkspaceFolderPath(vscode.Uri.parse(uri)),
                 };
                 
                 // If this is a subtask, also refresh parent task info
-                if (ref.parentTaskId) {
+                if (freshTask.parent) {
                   try {
-                    const parentTask = await this.clickUpService.getTaskDetails(ref.parentTaskId);
+                    const parentTask = await this.clickUpService.getTaskDetails(freshTask.parent);
                     if (parentTask && parentTask.id) {
+                      updatedRef.parentTaskId = parentTask.id;
                       updatedRef.parentTaskName = parentTask.name;
                       updatedRef.parentTaskDescription = parentTask.description;
                     }
                   } catch (parentError) {
-                    console.warn(`⚠️ Could not refresh parent task ${ref.parentTaskId}:`, parentError);
+                    console.warn(`⚠️ Could not refresh parent task ${freshTask.parent}:`, parentError);
                   }
                 }
                 
@@ -677,6 +711,9 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
         this.taskReferences.set(uri, updatedReferences);
       }
       
+      // Clean up any references that no longer have corresponding anchor tags
+      this.cleanupOrphanedReferences();
+      
       // Persist the updated references
       this.persistReferences();
       
@@ -699,6 +736,76 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     }
   }
 
+
+  /**
+   * Remove references that no longer have corresponding anchor tags in documents
+   * This helps keep the global state clean and prevents orphaned references
+   */
+  private cleanupOrphanedReferences(): void {
+    console.log('🧹 Cleaning up orphaned references...');
+    
+    const activeUris = new Set<string>();
+    const activeTaskIds = new Set<string>();
+    
+    // Collect all active URIs and task IDs
+    for (const [uri, refs] of this.taskReferences.entries()) {
+      if (refs.some(ref => ref.taskId)) {
+        activeUris.add(uri);
+        refs.forEach(ref => {
+          if (ref.taskId) activeTaskIds.add(ref.taskId);
+        });
+      }
+    }
+    
+    // Get the original data from storage to clean
+    const serialized = this.context.globalState.get<string>('clickup.taskReferences');
+    if (!serialized) return;
+    
+    try {
+      const data = JSON.parse(serialized);
+      let removedUriCount = 0;
+      let removedRefCount = 0;
+      
+      // Clean up stored data based on active references
+      const cleanedData: any = {};
+      
+      for (const uri in data) {
+        const refs = data[uri] || [];
+        
+        // If the URI is not active, skip it entirely
+        if (!activeUris.has(uri)) {
+          removedUriCount++;
+          removedRefCount += refs.length;
+          continue;
+        }
+        
+        // Filter references within active URIs to only keep those with active task IDs
+        const validRefs = refs.filter((ref: any) => 
+          !ref.taskId || activeTaskIds.has(ref.taskId)
+        );
+        
+        if (validRefs.length > 0) {
+          cleanedData[uri] = validRefs;
+        } else {
+          removedUriCount++;
+        }
+        
+        removedRefCount += (refs.length - validRefs.length);
+      }
+      
+      // Update storage with cleaned data
+      this.context.globalState.update('clickup.taskReferences', JSON.stringify(cleanedData));
+      
+      if (removedRefCount > 0) {
+        console.log(`🧹 Removed ${removedRefCount} orphaned references from ${removedUriCount} files`);
+      } else {
+        console.log('✅ No orphaned references found');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error cleaning up orphaned references:', error);
+    }
+  }
 
   private getWorkspaceFolderPath(uri: vscode.Uri): string | undefined {
     return vscode.workspace.getWorkspaceFolder(uri)?.uri.fsPath;

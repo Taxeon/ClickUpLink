@@ -27,6 +27,11 @@ export class AuthTreeProvider implements vscode.TreeDataProvider<AuthTreeItem> {
       if (isAuthenticated) {
         return [
           new AuthTreeItem('✅ Connected to ClickUp', vscode.TreeItemCollapsibleState.None, 'connected'),
+          new AuthTreeItem('Refresh Token', vscode.TreeItemCollapsibleState.None, 'refresh-token', {
+            command: 'clickuplink.refreshToken',
+            title: 'Refresh Token',
+            arguments: []
+          }),
           new AuthTreeItem('Logout', vscode.TreeItemCollapsibleState.None, 'logout', {
             command: 'clickuplink.logout',
             title: 'Logout',
@@ -79,6 +84,9 @@ export class AuthTreeItem extends vscode.TreeItem {
         break;
       case 'disconnected':
         this.iconPath = new vscode.ThemeIcon('error');
+        break;
+      case 'refresh-token':
+        this.iconPath = new vscode.ThemeIcon('refresh');
         break;
     }
   }

@@ -12,16 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Enhanced Refresh Command**: "Refresh Task References" button now fetches fresh data from ClickUp API instead of just refreshing cached data
 - **Progress Indicators**: Added visual progress feedback when manually refreshing task references
 - **Authentication-aware Refresh**: Refresh operations now check authentication status and handle unauthenticated scenarios gracefully
+- **Added support for jsx/tsx files**: Now automatically detects JSX/TSX files and adds task references for them
 
 ### Improved
 - **Data Accuracy**: All task references now display current ClickUp status, assignees, task names, and descriptions
 - **Startup Performance**: Background refresh doesn't block extension initialization
 - **Error Handling**: Better error messages and graceful fallbacks when ClickUp API calls fail
 - **Code Organization**: Unified refresh logic eliminates code duplication and improves maintainability
+- **Increased Timeouts**: Increased timeout values for ClickUp API calls to allow more time for longer running operations###
 
 ### Changed
 - **Refresh Behavior**: Task references now pull live data from ClickUp instead of relying on cached information
 - **Minimal Storage**: Extension now stores only essential reference data (position, taskId) and fetches display data fresh from ClickUp
+
+### Fixed
+- **ClickUp API Token Expired Error**: Tries to get new token in the event token has expired insted of just showing error.
+- **Task Reference Display**: Task names and descriptions now display correctly
+- **Remove Completed Tasks**: Feature now removes completed tasks from the tree view
+- **Clean Up References**: Now cleans up duplicate references and removes corrupted files
+
+### Removed
 
 ### Technical Details
 - Refactored refresh functionality to use a unified `refreshFromClickUpWithOptions()` method

@@ -37,7 +37,7 @@ export class HttpClient {
         method = 'GET',
         headers = {},
         data,
-        timeout = 10000
+        timeout = 30000  // Increased from 10s to 30s to accommodate slower API responses
       } = config;
 
       const parsedUrl = new URL(urlString);

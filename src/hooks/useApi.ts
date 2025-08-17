@@ -56,9 +56,68 @@ export async function apiRequest(
     
     // If we get a 401 Unauthorized error, the token might be expired
     if (error.message?.includes('HTTP 401')) {
-      console.log('🔑 Token appears to be expired');
-      vscode.window.showErrorMessage('Your ClickUp session has expired. Please login again.');
-      return null;
+      console.log('🔑 Token appears to be expired - attempting to refresh...');
+      
+      try {
+        // Import needed functions
+        const { getTokenData, refreshAccessToken, setTokens } = await import('../utils/tokenStorage');
+        
+        // Get current token data
+        const tokenData = await getTokenData(context);
+        
+        // If we have refresh token, try to use it
+        if (tokenData && tokenData.refreshToken) {
+          try {
+            console.log('🔄 Attempting to refresh token with refresh token...');
+            const newTokenData = await refreshAccessToken(tokenData.refreshToken);
+            
+            // Validate the response
+            if (!newTokenData || !newTokenData.accessToken) {
+              throw new Error('Invalid response from refresh token endpoint');
+            }
+            
+            // Save the new tokens
+            await setTokens(context, newTokenData);
+            console.log('✅ Token refreshed successfully, retrying request...');
+            
+            // Retry the request with the new token
+            return apiRequest(context, method, endpoint, body);
+          } catch (refreshError) {
+            console.error('❌ Token refresh failed:', refreshError);
+            
+            // Show more detailed error to help debugging
+            const errorDetails = refreshError instanceof Error 
+              ? refreshError.message 
+              : typeof refreshError === 'string'
+                ? refreshError
+                : 'Unknown error';
+            const errorMessage = `Token refresh failed: ${errorDetails}`;
+            console.error(errorMessage);
+            
+            // Prompt user to re-authenticate
+            const reloginAction = 'Login Again';
+            const result = await vscode.window.showErrorMessage(
+              'Your ClickUp session has expired. Please login again.',
+              { modal: false },
+              reloginAction
+            );
+            
+            if (result === reloginAction) {
+              vscode.commands.executeCommand('clickuplink.login');
+            }
+            
+            return null;
+          }
+        } else {
+          console.log('❌ No refresh token available');
+          vscode.window.showErrorMessage('Your ClickUp session has expired. Please login again.');
+          return null;
+        }
+      } catch (refreshError) {
+        console.error('❌ Error during token refresh attempt:', refreshError);
+        vscode.window.showErrorMessage('Your ClickUp session has expired. Please login again.');
+        return null;
+      }
     }
     
     const errorMessage = error.message || 'An unknown API error occurred.';

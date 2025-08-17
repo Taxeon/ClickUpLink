@@ -99,4 +99,6 @@ export interface TaskReference {
   parentTaskName?: string;
   description?: string;
   parentTaskDescription?: string;
+  spaceId?: string;
+  spaceName?: string;
 }
