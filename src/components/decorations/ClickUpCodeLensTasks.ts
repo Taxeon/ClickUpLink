@@ -145,7 +145,15 @@ export class ClickUpCodeLensTasks {
       )) as { label: string; status: any } | undefined;
       if (!selected) return;
 
-      await this.clickUpService.updateTaskStatus(taskId, selected.status.status);
+      // Show progress indicator during API call
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Updating task status to "${selected.status.status}"...`,
+        cancellable: false
+      }, async () => {
+        // The actual API call is made here
+        await this.clickUpService.updateTaskStatus(taskId, selected.status.status);
+      });
 
       const currentRef = getTaskReference(editor.document.uri.toString(), range);
       if (currentRef) {
@@ -296,9 +304,19 @@ export class ClickUpCodeLensTasks {
 
       if (selected === undefined) return;
 
-      // Update task assignee in ClickUp
+      // Update task assignee in ClickUp with a progress indicator
       const assigneeIds = selected.member ? [selected.member.id] : [];
-      await this.clickUpService.updateTaskAssignee(taskId, assigneeIds);
+      const assigneeName = selected.member ? selected.label.split(' ')[0] : 'Unassigned';
+      
+      // Show progress indicator during the API call
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Updating assignee to ${assigneeName}...`,
+        cancellable: false
+      }, async () => {
+        // The actual API call is made here
+        await this.clickUpService.updateTaskAssignee(taskId, assigneeIds);
+      });
 
       // Update local reference
       const currentRef = getTaskReference(editor.document.uri.toString(), range);
@@ -379,9 +397,9 @@ export class ClickUpCodeLensTasks {
       }
 
       let parentTask: any = undefined;
-      if (task.parent && task.parent.id) {
+      if (task.parent) {
         try {
-          parentTask = await this.clickUpService.getTaskDetails(task.parent.id);
+          parentTask = await this.clickUpService.getTaskDetails(task.parent);
         } catch (err) {
           console.warn(`ClickUp: Could not fetch parent task for ${taskId}`);
         }

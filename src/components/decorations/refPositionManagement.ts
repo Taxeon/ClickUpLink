@@ -30,22 +30,27 @@ export class RefPositionManager {
       case 'javascript':
       case 'go':
       case 'csharp':
-        lineCommentRegex = /(\/\/\/|\/\/)\s*clickup:\s*([a-zA-Z0-9_-]+)/g; // Supports /// and //
-        blockCommentRegex = /\/\*\s*clickup:\s*([a-zA-Z0-9_-]+)/g; // Supports /*
+        lineCommentRegex = /^[ \t]*(\/\/\/|\/\/)[ \t]{0,2}clickup:\s*([a-zA-Z0-9_-]+)/gi; // Starts with comment, case-insensitive
+        blockCommentRegex = /\/\*[ \t]{0,2}clickup:\s*([a-zA-Z0-9_-]+)/gi; // Block comment with clickup immediately after
         break;
       case 'python':
-        lineCommentRegex = /#\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
+        lineCommentRegex = /^[ \t]*#[ \t]{0,2}clickup:\s*([a-zA-Z0-9_-]+)/gi; // Must start with #, 0-2 spaces, case-insensitive
         break;
       case 'sql': // For SQL Server
-        lineCommentRegex = /--\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
+        lineCommentRegex = /^[ \t]*--[ \t]{0,2}clickup:\s*([a-zA-Z0-9_-]+)/gi; // Must start with --, 0-2 spaces, case-insensitive
         break;
       case 'vb': // For VB.Net
-        lineCommentRegex = /'\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
+        lineCommentRegex = /^[ \t]*'[ \t]{0,2}clickup:\s*([a-zA-Z0-9_-]+)/gi; // Must start with ', 0-2 spaces, case-insensitive
+        break;
+      case 'markdown':
+      case 'md':
+        // For markdown files, support both code-style comments and regular lines
+        lineCommentRegex = /^[ \t]*(\/\/|#|\/\/\/|\*|)[ \t]{0,2}clickup:\s*([a-zA-Z0-9_-]+)/ig; // Must be at beginning of line, case insensitive
         break;
       default:
         // Default to // for unknown languages or if no specific rule applies
-        lineCommentRegex = /\/\/\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
-        blockCommentRegex = /\/\*\s*clickup:\s*([a-zA-Z0-9_-]+)/g;
+        lineCommentRegex = /^[ \t]*\/\/[ \t]{0,2}clickup:\s*([a-zA-Z0-9_-]+)/gi; // Must start with //, 0-2 spaces, case-insensitive
+        blockCommentRegex = /\/\*[ \t]{0,2}clickup:\s*([a-zA-Z0-9_-]+)/gi; // Block comment with clickup immediately after
         break;
     }
 
@@ -61,7 +66,11 @@ export class RefPositionManager {
         // Reset regex lastIndex for each line
         lineCommentRegex.lastIndex = 0;
         while ((match = lineCommentRegex.exec(text))) {
-          const taskId = match[2]; // Adjusted for capture group in regex
+          const taskId = match[2]; // The taskId is in the 2nd capture group with our updated regex
+          if (!taskId) {
+            console.warn(`[ClickUp] No taskId found in match: ${match[0]} at line ${line}`);
+            continue;
+          }
           let ref = allKnownReferences.find(r => r.taskId === taskId);
           if (!ref) {
             ref = {
