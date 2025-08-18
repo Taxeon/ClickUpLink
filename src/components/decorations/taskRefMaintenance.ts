@@ -548,6 +548,16 @@ export class ClickUpCodeLensDebug {
     }
   }
 
+  /**
+   * Public method to remove a ClickUp anchor tag from a document
+   * @param uri Document URI
+   * @param reference Reference object with position information
+   * @param taskId Task ID to remove
+   */
+  async removeAnchor(uri: string, reference: any, taskId: string): Promise<void> {
+    return this.removeClickupAnchor(uri, reference, taskId);
+  }
+
   private async removeClickupAnchor(uri: string, reference: any, taskId: string): Promise<void> {
     try {
       // Try to open the document
@@ -638,11 +648,11 @@ export class ClickUpCodeLensDebug {
 
   /**
    * Updates the existing //clickup:[TaskId] anchor comment above the given range's start line.
-   * If not found, does nothing.
+   * Using a simpler approach that removes the old anchor and creates a new one.
    * @param range The range where the anchor should be updated above.
    * @param newTaskId The new ClickUp Task ID to update in the anchor.
    */
-    static async updateAnchor(
+  static async updateAnchor(
     range: vscode.Range,
     newTaskId: string
   ): Promise<void> {
@@ -650,54 +660,55 @@ export class ClickUpCodeLensDebug {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
       const document = editor.document;
-      const outputChannel = vscode.window.createOutputChannel('ClickUp Link Debug');
+      const uri = document.uri.toString();
       
-      outputChannel.appendLine(`Attempting to update anchor with task ID ${newTaskId} at line ${range.start.line}`);
+      console.log(`Updating anchor to task ID ${newTaskId} at line ${range.start.line}`);
       
-      // Use RefPositionManager to find an existing clickup marker
-      const markerInfo = RefPositionManager.findClickupMarkerNearPosition(document, range);
+      // Step 1: Delete the line containing the clickup tag
+      // We'll just find the clickup marker and delete the line directly
       
-      if (markerInfo) {
-        // Found anchor, prepare to update it
-        const { line, match, commentStyle } = markerInfo;
-        const oldTaskId = match[2];
-        const startIdx = match.index;
-        const endIdx = startIdx + match[0].length;
-        const lineText = document.lineAt(line).text;
-        
-        outputChannel.appendLine(`Found anchor match at line ${line}, pos ${startIdx}-${endIdx}`);
-        outputChannel.appendLine(`Comment style: "${commentStyle}", Old task ID: "${oldTaskId}"`);
-        
-        // Generate the replacement with same comment style but new task ID
-        const spacer = lineText.substring(startIdx + commentStyle.length, startIdx + commentStyle.length + 1) === ' ' ? ' ' : '';
-        const newAnchorText = `${commentStyle}${spacer}clickup:${newTaskId}`;
-        
-        outputChannel.appendLine(`Replacing with: "${newAnchorText}"`);
-        
-        // Replace just the clickup tag part, not the whole line
-        await editor.edit(editBuilder => {
-          editBuilder.replace(
-            new vscode.Range(line, startIdx, line, endIdx),
-            newAnchorText
-          );
-        });
-        
-        outputChannel.appendLine(`✅ Updated clickup anchor from ${oldTaskId} to ${newTaskId} at line ${line}`);
-      } else {
-        // No anchor found, create a new one at the current line
-        const currentLine = range.start.line;
-        outputChannel.appendLine(`No existing anchor found, creating new one with task ID ${newTaskId} at line ${currentLine}`);
-        const anchorText = `// clickup:${newTaskId}`;
-        await editor.edit(editBuilder => {
-          editBuilder.insert(new vscode.Position(currentLine, 0), anchorText + '\n');
-        });
-        outputChannel.appendLine(`✅ Created new anchor: "${anchorText}" at line ${currentLine}`);
+      // Check current line and a few lines above
+      const currentLine = range.start.line;
+      const linesToCheck = [currentLine];
+      for (let i = 1; i <= 3; i++) {
+        if (currentLine - i >= 0) linesToCheck.push(currentLine - i);
       }
+      if (currentLine < document.lineCount - 1) linesToCheck.push(currentLine + 1);
+      
+      // Sort lines to check closest lines first
+      linesToCheck.sort((a, b) => Math.abs(a - currentLine) - Math.abs(b - currentLine));
+      
+      // Check each line for a clickup tag
+      let foundTag = false;
+      for (const line of linesToCheck) {
+        try {
+          const lineText = document.lineAt(line).text;
+          const anchorRegex = /(\/\/|\/\*|#|--|'|\*|<!--)[ \t]{0,2}clickup:[a-zA-Z0-9_-]+/i;
+          
+          if (anchorRegex.test(lineText)) {
+            // Found a clickup tag, delete this line
+            await editor.edit(editBuilder => {
+              editBuilder.delete(new vscode.Range(line, 0, line + 1, 0));
+            });
+            console.log(`Deleted existing clickup anchor at line ${line}`);
+            foundTag = true;
+            break;
+          }
+        } catch (e) {
+          console.error(`Error checking line ${line} for clickup tag:`, e);
+        }
+      }
+      
+      if (!foundTag) {
+        console.log(`No existing clickup anchor found to remove`);
+      }
+      
+      // Step 2: Create a new anchor with the new task ID
+      await ClickUpCodeLensDebug.createAnchor(range, newTaskId);
+      
+      console.log(`✅ Updated anchor to task ID ${newTaskId}`);
     } catch (err) {
       console.error('Error in updateAnchor:', err);
-      const outputChannel = vscode.window.createOutputChannel('ClickUp Link Debug');
-      outputChannel.appendLine(`❌ Error in updateAnchor: ${err}`);
-      outputChannel.show(true);
     }
   }
 }
