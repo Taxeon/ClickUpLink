@@ -61,6 +61,11 @@ export class SettingsTreeProvider implements vscode.TreeDataProvider<SettingsTre
           title: 'Show Debug Output',
           arguments: []
         }),
+        new SettingsTreeItem('Auto-Refresh Settings', vscode.TreeItemCollapsibleState.None, 'settings', {
+          command: 'clickup.openRefreshSettings',
+          title: 'Configure Auto-Refresh Settings',
+          arguments: []
+        }),
         new SettingsTreeItem('Refresh All Views', vscode.TreeItemCollapsibleState.None, 'refresh', {
           command: 'clickup.refreshAllViews',
           title: 'Refresh All Views',
@@ -96,6 +101,9 @@ export class SettingsTreeItem extends vscode.TreeItem {
         break;
       case 'log':
         this.iconPath = new vscode.ThemeIcon('output');
+        break;
+      case 'settings':
+        this.iconPath = new vscode.ThemeIcon('settings-gear');
         break;
       case 'refresh':
         this.iconPath = new vscode.ThemeIcon('refresh');

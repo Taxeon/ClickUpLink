@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { TaskReference } from '../../types';
+import { OutputChannelManager } from '../../utils/outputChannels';
 
 /**
  * Manages ClickUp reference markers and their positions in a document.
@@ -86,7 +87,8 @@ export class RefPositionManager {
     document: vscode.TextDocument,
     allKnownReferences: TaskReference[]
   ): void {
-    console.log(`🔍 Scanning document for ClickUp markers: ${document.fileName}`);
+    const outputChannel = OutputChannelManager.getChannel('ClickUpLink: UpdateReferences Debug');
+    outputChannel.appendLine(`🔍 Scanning document for ClickUp markers: ${document.fileName}`);
     console.log(`📄 Document language: ${document.languageId}`);
     console.log(`💾 Known references count: ${allKnownReferences.length}`);
     
@@ -250,48 +252,36 @@ export class RefPositionManager {
    * @param range The range to look near
    * @returns Object with marker details if found, null otherwise
    */
-  static findClickupMarkerNearPosition(
+  static findClickupAnchor(
     document: vscode.TextDocument,
     range: vscode.Range
   ): { line: number; match: RegExpExecArray; commentStyle: string } | null {
     console.log(`🔍 Finding clickup marker near line ${range.start.line}`);
     
-    // Check current line, 3 lines above and 1 line below
-    const currentLine = range.start.line;
-    const linesToCheck = [currentLine];
-    for (let i = 1; i <= 3; i++) {
-      if (currentLine - i >= 0) linesToCheck.push(currentLine - i);
-    }
-    if (currentLine < document.lineCount - 1) linesToCheck.push(currentLine + 1);
-    
-    console.log(`Checking lines for marker: ${linesToCheck.join(', ')}`);
-    
-    // Sort lines to check closest lines first
-    linesToCheck.sort((a, b) => Math.abs(a - currentLine) - Math.abs(b - currentLine));
+    // Check current line
+    const line = range.start.line;
     
     // Check each line for a clickup tag
-    for (const line of linesToCheck) {
-      try {
-        const lineText = document.lineAt(line).text;
-        console.log(`Checking line ${line}: "${lineText}"`);
+    try {
+      const lineText = document.lineAt(line).text;
+      console.log(`Checking line ${line}: "${lineText}"`);
+      
+      // Create a fresh regex instance for each line to avoid stateful issues with lastIndex
+      const anchorRegex = this.getGenericClickUpRegex();
+      const match = anchorRegex.exec(lineText);
+      
+      if (match) {
+        console.log(`Found marker match at line ${line}, pos ${match.index}-${match.index + match[0].length}`);
+        const commentStyle = match[1] || ''; // The comment marker (// or /* or # etc.)
+        console.log(`Comment style: "${commentStyle}", Task ID: "${match[2]}"`);
         
-        // Create a fresh regex instance for each line to avoid stateful issues with lastIndex
-        const anchorRegex = this.getGenericClickUpRegex();
-        const match = anchorRegex.exec(lineText);
-        
-        if (match) {
-          console.log(`Found marker match at line ${line}, pos ${match.index}-${match.index + match[0].length}`);
-          const commentStyle = match[1] || ''; // The comment marker (// or /* or # etc.)
-          console.log(`Comment style: "${commentStyle}", Task ID: "${match[2]}"`);
-          
-          return { line, match, commentStyle };
-        }
-      } catch (e) {
-        console.log(`⚠️ Error checking line ${line} for marker: ${e}`);
+        return { line, match, commentStyle };
       }
+    } catch (e) {
+      console.log(`⚠️ Error checking line ${line} for marker: ${e}`);
     }
-    
-    console.log(`❌ No marker found near line ${range.start.line}`);
+        
+    console.log(`❌ No marker found at line ${range.start.line}`);
     return null;
   }
 }

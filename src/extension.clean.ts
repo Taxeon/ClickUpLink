@@ -5,12 +5,13 @@ import { ClickUpCodeLensProvider } from './components/decorations/ClickUpCodeLen
 import { AuthTreeProvider } from './views/AuthTreeProvider';
 import { WorkspaceTreeProvider } from './views/WorkspaceTreeProvider';
 import { ReferencesTreeProvider } from './views/ReferencesTreeProvider';
+import { OutputChannelManager } from './utils/outputChannels';
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('🚀 ClickUp Link extension is activating...');
   
-  // Create an output channel for easier debugging
-  const outputChannel = vscode.window.createOutputChannel('ClickUp Link Debug');
+  // Create an output channel for easier debugging  
+  const outputChannel = OutputChannelManager.getChannel('ClickUp Link Debug');
   outputChannel.appendLine('🚀 ClickUp Link extension is activating...');
   
   // Store context globally for hooks

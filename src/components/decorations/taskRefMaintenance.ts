@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { TaskReference } from '../../types/index';
 import { RefPositionManager } from './refPositionManagement';
+import { OutputChannelManager } from '../../utils/outputChannels';
 
 export class ClickUpCodeLensDebug {
   private context: vscode.ExtensionContext;
@@ -382,8 +383,8 @@ export class ClickUpCodeLensDebug {
     fireChangeEvent: () => void
   ): Promise<void> {
     try {
-      // Output channel for logging
-      const outputChannel = vscode.window.createOutputChannel('ClickUp Link Debug');
+      // Output channel for logging      
+      const outputChannel = OutputChannelManager.getChannel('ClickUp Link Debug');
       outputChannel.appendLine('🧹 Starting removal of completed task references...');
       
       let removedCount = 0;
@@ -454,6 +455,7 @@ export class ClickUpCodeLensDebug {
           // Remove clickup anchors one by one, from bottom to top
           for (const { ref, taskId } of refs) {
             try {
+              outputChannel.appendLine(`📄 Processing remove for anchor at line ${ref.range?.start?.line}`);
               await this.removeClickupAnchor(uri, ref, taskId);
               removedCount++;
             } catch (error) {
@@ -574,16 +576,15 @@ export class ClickUpCodeLensDebug {
         ) : 
         new vscode.Range(0, 0, 0, 0);
       
-      // Create an output channel for debugging
-      const outputChannel = vscode.window.createOutputChannel('ClickUp Link Debug');
+      // Create an output channel for debugging      
+      const outputChannel = OutputChannelManager.getChannel('ClickUp Link Debug');
       outputChannel.appendLine(`Attempting to remove clickup anchor for task ${taskId} at line ${range.start.line}`);
       
       // Look for clickup marker near the reference position
-      const markerInfo = RefPositionManager.findClickupMarkerNearPosition(document, range);
+      const markerInfo = RefPositionManager.findClickupAnchor(document, range);
       
       if (markerInfo) {
-        outputChannel.appendLine(`Found clickup marker at line ${markerInfo.line}: "${markerInfo.match[0]}"`);
-        
+
         // Create edit to remove the entire line with the clickup tag
         const edit = new vscode.WorkspaceEdit();
         const lineRange = new vscode.Range(
@@ -596,14 +597,15 @@ export class ClickUpCodeLensDebug {
         
         // Apply the edit
         await vscode.workspace.applyEdit(edit);
-        outputChannel.appendLine(`✅ Removed clickup anchor at line ${markerInfo.line}`);
+        outputChannel.appendLine(`✅ Removed clickup anchor for task ${taskId}`);
       } else {
-        outputChannel.appendLine(`⚠️ No clickup anchor found near line ${range.start.line}`);
+        outputChannel.appendLine(`⚠️ Clickup anchor not found for task ${taskId} at line ${range.start.line}`);
       }
     } catch (error) {
       console.error('Failed to remove clickup anchor from document:', error);
       throw error; // Propagate the error to be caught in the calling method
     }
+  
   }
 
   /**

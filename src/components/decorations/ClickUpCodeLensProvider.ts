@@ -5,6 +5,7 @@ import { ClickUpCodeLensDebug } from './taskRefMaintenance';
 import { TaskReference } from '../../types/index';
 import { RefPositionManager } from './refPositionManagement';
 import { BuildTaskRef } from './buildTaskRef';
+import { OutputChannelManager } from '../../utils/outputChannels';
 
 export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   private static instance: ClickUpCodeLensProvider;
@@ -13,6 +14,8 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   private taskReferences: Map<string, TaskReference[]> = new Map();
   private _onDidChangeCodeLenses = new vscode.EventEmitter<void>();
   private taskRefBuilder: BuildTaskRef;
+  private referencesTreeProvider: any; // Will store the tree provider for refreshing the UI
+  private refreshIntervalTimer: NodeJS.Timeout | undefined;
   readonly onDidChangeCodeLenses = this._onDidChangeCodeLenses.event;
 
   // Helper modules
@@ -40,11 +43,12 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
 
   async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
     const allKnownReferences = this.taskReferences.get(document.uri.toString()) || [];
-    RefPositionManager.updateReferencesFromMarkers(document, allKnownReferences);
+    //RefPositionManager.updateReferencesFromMarkers(document, allKnownReferences);
 
     const activeReferences = RefPositionManager.getActiveReferences(document.uri.toString());
 
     // Inflate any new references that have a taskId but are missing other details
+    let needToSaveChanges = false;
     for (const ref of activeReferences) {
       if (ref.taskId && !ref.taskName) {
           const newReference = await this.tasks.buildReferenceFromTaskId(
@@ -53,9 +57,15 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
             ref.range
           );
           if (newReference) {
-            this.saveTaskReference(document.uri.toString(), newReference);
+            this.saveTaskReference(document.uri.toString(), newReference, true); // Skip individual persists
+            needToSaveChanges = true;
           }
       }
+    }
+    
+    // Only persist once if any changes were made
+    if (needToSaveChanges) {
+      this.persistReferences();
     }
 
     // After inflation, re-fetch active references to ensure they are up-to-date
@@ -288,7 +298,12 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     );
   }
 
-  private saveTaskReference(uri: string, reference: TaskReference): void {
+  /**
+   * Saves a task reference to the in-memory cache and persists to globalState
+   * This is a lower-level function that doesn't trigger UI updates
+   * @param skipPersist If true, don't persist to globalState (use for batch operations)
+   */
+  private saveTaskReference(uri: string, reference: TaskReference, skipPersist: boolean = false): void {
     const references = this.taskReferences.get(uri) || [];
 
     // Add workspace folder path if missing
@@ -301,16 +316,33 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
         ref.range.start.character === reference.range.start.character
     );
 
+    // Check if we're actually changing anything to avoid unnecessary updates
+    let hasChanges = false;
+    
     if (existingIndex !== -1) {
-      references[existingIndex] = reference;
+      // Only update if there are actual changes
+      const existing = references[existingIndex];
+      if (JSON.stringify(existing) !== JSON.stringify(reference)) {
+        references[existingIndex] = reference;
+        hasChanges = true;
+      }
     } else {
+      // New reference
       references.push(reference);
+      hasChanges = true;
     }
 
-    this.taskReferences.set(uri, references);
-    this.persistReferences();
-    // Refresh the task reference pane
-    this._onDidChangeCodeLenses.fire();
+    if (hasChanges) {
+      this.taskReferences.set(uri, references);
+      
+      // Only persist to globalState if not skipped and there were changes
+      if (!skipPersist) {
+        this.persistReferences();
+        const outputChannel = OutputChannelManager.getChannel('ClickUpLink: UpdateReferences Debug');
+        outputChannel.appendLine(`🔍 saveTaskReference: Updated reference cache`);
+      }
+    }
+    // No UI updates here - those are handled by the caller or document events
   }
 
   // Streamlined persistence with functional approach
@@ -456,7 +488,9 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     });
 
     // Force refresh so CodeLens and task reference pane update immediately
-    this._onDidChangeCodeLenses.fire();
+          const outputChannel = OutputChannelManager.getChannel('ClickUpLink: UpdateReferences Debug');
+    outputChannel.appendLine(`🔍 addTaskReferfenceAtCursor: Triggering Codelense Change`);
+   // this._onDidChangeCodeLenses.fire();
     vscode.window.showInformationMessage(
       'ClickUp task reference added. Click the CodeLens to set it up.'
     );
@@ -464,23 +498,57 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
 
   // Utility methods
   public refresh(): void {
+    const outputChannel = OutputChannelManager.getChannel('ClickUpLink: UpdateReferences Debug');
+    outputChannel.appendLine(`🔍 refresh(): Triggering CodeLens Change`);
+       
+    // Fire the event to update CodeLenses
     this._onDidChangeCodeLenses.fire();
   }
-
+  
   public initialize(): void {
     this.loadReferences();
     
     // Refresh with latest ClickUp data on startup (async, don't block initialization)
     this.refreshFromClickUpOnStartup();
     
+    // Setup automatic periodic refresh based on user settings
+    this.setupAutoRefresh();
+    
     // Setup event response to document saves to update changes to anchor comments
     vscode.workspace.onDidSaveTextDocument(document => {
+      const outputChannel = OutputChannelManager.getChannel('ClickUpLink: UpdateReferences Debug');
+      outputChannel.appendLine(`🔍 Document saved: ${document.fileName}`);
+      
+      // Purge orphaned references (those without anchors) on save
       RefPositionManager.purgeOrphanedReferencesOnSave(document.uri.toString(), (uri, refs) => {
         this.taskReferences.set(uri, refs);
         this.persistReferences();
+        
+        outputChannel.appendLine(`📋 Updated references after save: ${refs.length} references remain`);
       });
-      this._onDidChangeCodeLenses.fire();
+      
+      // No need to manually trigger CodeLens update - onDidChangeTextDocument handles this
     });
+    
+    // Listen for configuration changes to update refresh timer if needed
+    vscode.workspace.onDidChangeConfiguration(event => {
+      if (
+        event.affectsConfiguration('clickupLink.references.autoRefreshEnabled') ||
+        event.affectsConfiguration('clickupLink.references.refreshIntervalMinutes')
+      ) {
+        // Reconfigure the refresh timer when settings change
+        this.setupAutoRefresh();
+      }
+    });
+  }
+  
+  /**
+   * Connects the references tree provider to the CodeLens provider
+   * This allows the CodeLens provider to refresh the tree view when references change
+   * @param treeProvider The references tree provider instance
+   */
+  public setReferencesTreeProvider(treeProvider: any): void {
+    this.referencesTreeProvider = treeProvider;
   }
 
   /**
@@ -541,7 +609,59 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     }
   }
 
+  /**
+   * Sets up automatic periodic refresh of task references based on user settings
+   */
+  private setupAutoRefresh(): void {
+    // Clear any existing timer
+    if (this.refreshIntervalTimer) {
+      clearInterval(this.refreshIntervalTimer);
+      this.refreshIntervalTimer = undefined;
+    }
+    
+    // Check if auto-refresh is enabled
+    const config = vscode.workspace.getConfiguration('clickupLink.references');
+    const autoRefreshEnabled = config.get<boolean>('autoRefreshEnabled', true);
+    
+    if (autoRefreshEnabled) {
+      // Get refresh interval in minutes (default: 60 minutes, min: 5, max: 1440)
+      let intervalMinutes = config.get<number>('refreshIntervalMinutes', 60);
+      
+      // Enforce min/max bounds
+      intervalMinutes = Math.max(5, Math.min(1440, intervalMinutes));
+      
+      // Convert to milliseconds
+      const intervalMs = intervalMinutes * 60 * 1000;
+      
+      const outputChannel = OutputChannelManager.getChannel('ClickUpLink: UpdateReferences Debug');
+      outputChannel.appendLine(`⏰ Setting up auto-refresh every ${intervalMinutes} minutes`);
+      
+      // Set up the timer
+      this.refreshIntervalTimer = setInterval(() => {
+        outputChannel.appendLine(`⏰ Auto-refresh timer triggered after ${intervalMinutes} minutes`);
+        
+        // Use silent mode and don't check auth for automatic refreshes
+        this.refreshFromClickUpWithOptions({
+          silent: true,
+          checkAuth: false
+        }).catch(error => {
+          console.warn('Auto-refresh error:', error);
+        });
+      }, intervalMs);
+      
+      console.log(`⏰ Automatic refresh configured for every ${intervalMinutes} minutes`);
+    } else {
+      console.log('⏰ Automatic refresh is disabled');
+    }
+  }
+
   public dispose(): void {
+    // Clean up the refresh timer when the extension is deactivated
+    if (this.refreshIntervalTimer) {
+      clearInterval(this.refreshIntervalTimer);
+      this.refreshIntervalTimer = undefined;
+    }
+    
     this._onDidChangeCodeLenses.dispose();
   }
 
@@ -567,7 +687,6 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   deleteTaskReference(uri: string, line: number, character: number): void {
     this.debug.deleteTaskReference(uri, line, character, () => {
       this.loadReferences();
-      this._onDidChangeCodeLenses.fire();
     });
   }
 
@@ -575,9 +694,9 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
    * Refresh all task references with fresh data from ClickUp API
    * This scans workspace documents for ClickUp references, then fetches fresh data from ClickUp API
    * This ensures we only refresh references that actually exist in the code
+   * @param silent If true, suppress non-critical notifications and messages
    */
-
-  async refreshFromClickUp(): Promise<void> {
+  async refreshFromClickUp(silent: boolean = false): Promise<void> {
     console.log('🔄 Starting fresh data refresh from ClickUp API...');
     
     // Step 1: Get all text documents in the workspace
@@ -707,32 +826,46 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
           }
         }
         
-        // Update the references for this URI
-        this.taskReferences.set(uri, updatedReferences);
+        // Batch update: use the skipPersist flag to avoid excessive persistence operations
+        for (const updatedRef of updatedReferences) {
+          this.saveTaskReference(uri, updatedRef, true); // Skip individual persists
+        }
       }
       
       // Clean up any references that no longer have corresponding anchor tags
       this.cleanupOrphanedReferences();
       
-      // Persist the updated references
+      // Persist all the changes at once
       this.persistReferences();
       
       // Fire events to refresh UI
+      const outputChannel = OutputChannelManager.getChannel('ClickUpLink: UpdateReferences Debug');
+      outputChannel.appendLine(`🔍 refreshFromClickup: Triggering Codelense Change`);
       this._onDidChangeCodeLenses.fire();
       
       console.log(`🎉 Refresh complete: Updated ${updatedCount} task references, ${errorCount} errors`);
       
-      if (updatedCount > 0) {
-        vscode.window.showInformationMessage(
-          `Refreshed ${updatedCount} task references from ClickUp${errorCount > 0 ? ` (${errorCount} errors)` : ''}`
-        );
-      } else {
-        vscode.window.showInformationMessage('No task references to refresh');
+      // Only show messages if not in silent mode
+      if (!silent) {
+        if (updatedCount > 0) {
+          vscode.window.showInformationMessage(
+            `Refreshed ${updatedCount} task references from ClickUp${errorCount > 0 ? ` (${errorCount} errors)` : ''}`
+          );
+        } else if (errorCount === 0) {
+          vscode.window.showInformationMessage('No task references to refresh');
+        }
       }
       
     } catch (error) {
       console.error('❌ Critical error during refresh from ClickUp:', error);
-      vscode.window.showErrorMessage(`Failed to refresh from ClickUp: ${error}`);
+      
+      // Always show critical errors unless in silent mode
+      if (!silent) {
+        vscode.window.showErrorMessage(`Failed to refresh from ClickUp: ${error}`);
+      }
+      
+      // Re-throw the error so the caller can handle it
+      throw error;
     }
   }
 

@@ -134,6 +134,7 @@ export function registerTaskCommands(
       }
     }
   ));
+
   // Add debug commands for testing persistence
   context.subscriptions.push(vscode.commands.registerCommand(
     'clickuplink.debugShowReferences',
@@ -188,6 +189,14 @@ export function registerTaskCommands(
   ));
 
   // Add command to clear references with warning
+  // Register command to open refresh settings
+  context.subscriptions.push(vscode.commands.registerCommand('clickup.openRefreshSettings', () => {
+    vscode.commands.executeCommand(
+      'workbench.action.openSettings', 
+      'clickupLink.references'
+    );
+  }));
+
   context.subscriptions.push(vscode.commands.registerCommand('clickup.clearReferencesWithWarning', async () => {
     const result = await vscode.window.showWarningMessage(
       'Are you sure you want to clear ALL task references? This action cannot be undone.',

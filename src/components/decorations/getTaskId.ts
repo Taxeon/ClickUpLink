@@ -299,8 +299,13 @@ export class GetTask {
     const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range);
     const editor = vscode.window.activeTextEditor;
     if (editor) {
-      saveTaskReference(editor.document.uri.toString(), newReference);
+      // First update the anchor tag (this will trigger document change events)
       await ClickUpCodeLensDebug.updateAnchor(range, selectedTask.id);
+      
+      // Then save the task reference data
+      saveTaskReference(editor.document.uri.toString(), newReference);
+      
+      // Finally, refresh tree views and other UI components
       fireChangeEvent();
     }
   }
@@ -318,8 +323,13 @@ export class GetTask {
     const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range);
     const editor = vscode.window.activeTextEditor;
     if (editor) {
-      saveTaskReference(editor.document.uri.toString(), newReference);
+      // First update the anchor tag (this will trigger document change events)
       await ClickUpCodeLensDebug.updateAnchor(range, selectedTask.id);
+      
+      // Then save the task reference data
+      saveTaskReference(editor.document.uri.toString(), newReference);
+      
+      // Finally, refresh tree views and other UI components
       fireChangeEvent();
     }
   }
@@ -358,15 +368,19 @@ export class GetTask {
       // Create instance of ClickUpCodeLensDebug to access removeClickupAnchor
       const taskRefDebug = new ClickUpCodeLensDebug(this.context);
       
-      // 1. Remove the old anchor
+      // Step 1: Update the anchor tag in the document
+      // First remove the old anchor
       console.log(`Removing anchor for ${taskType} ${oldTaskId}`);
       await taskRefDebug.removeAnchor(editor.document.uri.toString(), oldReference, oldTaskId);
       
-      // 2. Create a new anchor with the new task ID
+      // Then create the new anchor
       console.log(`Creating new anchor for ${taskType} ${newTask.id}`);
-      await ClickUpCodeLensDebug.createAnchor(range, newTask.id);            
-
-      // 3. Show success message
+      await ClickUpCodeLensDebug.createAnchor(range, newTask.id);
+      
+      // Step 2: Build and save the new task reference data
+      // This is handled by the caller after this method completes
+      
+      // Step 3: Show success message
       vscode.window.showInformationMessage(`Updated ${taskType} reference to: ${newTask.name}`);
     } catch (error) {
       console.error(`Error updating ${taskType} reference:`, error);
@@ -401,12 +415,7 @@ export class GetTask {
             fireChangeEvent
           );
         } else {
-          // If no existing reference was found, just create a new one
-          const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range);
-          saveTaskReference(editor.document.uri.toString(), newReference);
-          await ClickUpCodeLensDebug.createAnchor(range, selectedTask.id);
-          fireChangeEvent();
-          vscode.window.showInformationMessage(`Linked to task: ${selectedTask.name}`);
+          vscode.window.showErrorMessage('Could not find original task to update');
         }
       } catch (error) {
         console.error('Error updating task reference:', error);
@@ -450,11 +459,7 @@ export class GetTask {
           );
         } else {
           // If no existing reference was found, just create a new one
-          const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range);
-          saveTaskReference(editor.document.uri.toString(), newReference);
-          await ClickUpCodeLensDebug.createAnchor(range, selectedTask.id);
-          fireChangeEvent();
-          vscode.window.showInformationMessage(`Linked to subtask: ${selectedTask.name}`);
+          vscode.window.showErrorMessage('Could not find original task to update');
         }
       } catch (error) {
         console.error('Error updating subtask reference:', error);

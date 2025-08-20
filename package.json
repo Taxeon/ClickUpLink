@@ -157,6 +157,11 @@
       {
         "command": "clickuplink.clearCompletedReferences",
         "title": "ClickUpLink: Clear Completed Task References"
+      },
+      {
+        "command": "clickup.openRefreshSettings",
+        "title": "ClickUpLink: Configure Auto-Refresh Settings",
+        "icon": "$(settings-gear)"
       }
     ],
     "configuration": {
@@ -249,6 +254,23 @@
           "default": true,
           "description": "Enable direct task ID detection (CU-123, #123)"
         },
+        "clickupLink.references.autoRefreshEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh task references from ClickUp at regular intervals",
+          "order": 1,
+          "category": "Task References"
+        },
+        "clickupLink.references.refreshIntervalMinutes": {
+          "type": "number",
+          "default": 60,
+          "minimum": 5,
+          "maximum": 1440,
+          "description": "Interval in minutes between automatic task reference refreshes",
+          "markdownDescription": "**Refresh Interval** - Time in minutes between automatic refreshes of ClickUp task data *(min: 5, max: 1440)*",
+          "order": 2,
+          "category": "Task References"
+        },
         "clickupLink.triggers.customTriggers": {
           "type": "array",
           "items": {
@@ -261,7 +283,12 @@
         {
           "command": "clickuplink.refreshTaskReferences",
           "when": "view == clickup-references",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "clickup.openRefreshSettings",
+          "when": "view == clickup-references",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
