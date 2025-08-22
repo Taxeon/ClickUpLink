@@ -42,29 +42,84 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   private _alreadyPopulated: Set<string> = new Set();
 
   async provideCodeLenses(document: vscode.TextDocument): Promise<vscode.CodeLens[]> {
+    const isGoFile = document.languageId === 'go' || document.fileName.toLowerCase().endsWith('.go');
+    const outputChannel = OutputChannelManager.getChannel('ClickUpLink: UpdateReferences Debug');
+    
+    if (isGoFile) {
+      outputChannel.appendLine(`🚀 GO FILE: provideCodeLenses for ${document.fileName}`);
+    }
+    
     const allKnownReferences = this.taskReferences.get(document.uri.toString()) || [];
     //RefPositionManager.updateReferencesFromMarkers(document, allKnownReferences);
 
     const activeReferences = RefPositionManager.getActiveReferences(document.uri.toString());
+    
+    if (isGoFile) {
+      outputChannel.appendLine(`📋 GO FILE: Found ${activeReferences.length} active references`);
+      if (activeReferences.length > 0) {
+        activeReferences.forEach((ref, i) => {
+          outputChannel.appendLine(`  ${i+1}. Line ${ref.range.start.line}: TaskID=${ref.taskId || 'none'}, TaskName=${ref.taskName || 'none'}`);
+        });
+      }
+    }
+
+    // Check authentication for Go files
+    if (isGoFile) {
+      try {
+        const isAuthenticated = await this.clickUpService.isAuthenticated();
+        outputChannel.appendLine(`🔐 GO FILE: Authentication status: ${isAuthenticated ? 'Authenticated' : 'Not authenticated'}`);
+        
+        if (!isAuthenticated) {
+          outputChannel.appendLine('⚠️ GO FILE: Not authenticated - this will prevent task data from loading');
+          // Still continue to show the setup lenses
+        }
+      } catch (err) {
+        outputChannel.appendLine(`⚠️ GO FILE: Error checking authentication: ${err}`);
+      }
+    }
 
     // Inflate any new references that have a taskId but are missing other details
     let needToSaveChanges = false;
     for (const ref of activeReferences) {
       if (ref.taskId && !ref.taskName) {
+        if (isGoFile) {
+          outputChannel.appendLine(`🔄 GO FILE: Building reference for taskId ${ref.taskId} at line ${ref.range.start.line}`);
+        }
+          
+        try {
           const newReference = await this.tasks.buildReferenceFromTaskId(
             ref.taskId,
             document,
             ref.range
           );
+          
           if (newReference) {
+            if (isGoFile) {
+              outputChannel.appendLine(`✅ GO FILE: Successfully built reference for taskId ${ref.taskId}`);
+              outputChannel.appendLine(`  TaskName: ${newReference.taskName || 'none'}`);
+              outputChannel.appendLine(`  FolderName: ${newReference.folderName || 'none'}`);
+              outputChannel.appendLine(`  ListName: ${newReference.listName || 'none'}`);
+            }
+            
             this.saveTaskReference(document.uri.toString(), newReference, true); // Skip individual persists
             needToSaveChanges = true;
+          } else if (isGoFile) {
+            outputChannel.appendLine(`❌ GO FILE: Failed to build reference for taskId ${ref.taskId} - returned undefined`);
           }
+        } catch (error) {
+          if (isGoFile) {
+            outputChannel.appendLine(`❌ GO FILE: Error building reference for taskId ${ref.taskId}: ${error}`);
+          }
+          console.error(`Error building reference for taskId ${ref.taskId}:`, error);
+        }
       }
     }
     
     // Only persist once if any changes were made
     if (needToSaveChanges) {
+      if (isGoFile) {
+        outputChannel.appendLine(`💾 GO FILE: Persisting references after building`);
+      }
       this.persistReferences();
     }
 
@@ -74,9 +129,42 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       .map(activeRef => this.getTaskReference(document.uri.toString(), activeRef.range))
       .filter((ref): ref is TaskReference => ref !== undefined);
 
+    if (isGoFile) {
+      outputChannel.appendLine(`📋 GO FILE: Final references for lenses: ${finalReferencesForLenses.length}`);
+      finalReferencesForLenses.forEach((ref, i) => {
+        outputChannel.appendLine(`  ${i+1}. Line ${ref.range.start.line}: TaskID=${ref.taskId || 'none'}, TaskName=${ref.taskName || 'none'}`);
+      });
+    }
+
+    // Create code lenses with extra error handling for Go files
     const allLenses = await Promise.all(
-      finalReferencesForLenses.map(ref => this.createCodeLensForReference(ref, document))
+      finalReferencesForLenses.map(async (ref) => {
+        try {
+          const lenses = await this.createCodeLensForReference(ref, document);
+          if (isGoFile) {
+            outputChannel.appendLine(`🔍 GO FILE: Created ${lenses.length} code lenses for reference at line ${ref.range.start.line}`);
+          }
+          return lenses;
+        } catch (error) {
+          if (isGoFile) {
+            outputChannel.appendLine(`❌ GO FILE: Error creating code lens for reference at line ${ref.range.start.line}: ${error}`);
+          }
+          console.error(`Error creating code lens for reference:`, error);
+          // Return a simple error lens if we can't create the proper one
+          return [
+            new vscode.CodeLens(ref.range, {
+              title: '⚠️ Error loading task reference',
+              command: 'clickuplink.setupTaskReference',
+              arguments: [document.uri, ref.range],
+            }),
+          ];
+        }
+      })
     );
+
+    if (isGoFile) {
+      outputChannel.appendLine(`✅ GO FILE: Returning ${allLenses.flat().length} code lenses in total`);
+    }
 
     return allLenses.flat();
   }
@@ -123,26 +211,90 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     const lenses: vscode.CodeLens[] = [];
     const fullBreadcrumb = this.buildFullBreadcrumb(ref);
     let col = 0;
+    
+    // Check if this is a Go file
+    const editor = vscode.window.activeTextEditor;
+    const isGoFile = editor && (editor.document.languageId === 'go' || editor.document.fileName.toLowerCase().endsWith('.go'));
+    const outputChannel = isGoFile ? OutputChannelManager.getChannel('ClickUpLink: UpdateReferences Debug') : null;
+    
+    if (isGoFile && outputChannel) {
+      outputChannel.appendLine(`🔍 GO FILE: Creating breadcrumbs for task at line ${line}`);
+      outputChannel.appendLine(`  TaskId: ${ref.taskId || 'none'}`);
+      outputChannel.appendLine(`  TaskName: ${ref.taskName || 'none'}`);
+    }
 
     // Fetch latest description from ClickUp
     if (ref.taskId) {
+      if (isGoFile && outputChannel) {
+        outputChannel.appendLine(`🔄 GO FILE: Fetching task details for ${ref.taskId}`);
+      }
+      
       try {
         const task = await this.clickUpService.getTaskDetails(ref.taskId);
         if (!task || !task.id) {
-          // If task is not found or invalid, do not proceed with creating task-specific lenses
+          if (isGoFile && outputChannel) {
+            outputChannel.appendLine(`⚠️ GO FILE: Task not found or invalid for ${ref.taskId}`);
+          }
+          // If task is not found or invalid, provide a fallback lens
+          if (isGoFile) {
+            return [
+              new vscode.CodeLens(new vscode.Range(line, 0, line, 10), {
+                title: `⚠️ Task Not Found: ${ref.taskId}`,
+                command: 'clickuplink.setupTaskReference',
+                arguments: [editor?.document.uri, ref.range],
+              }),
+            ];
+          }
           return lenses;
         }
+        
+        if (isGoFile && outputChannel) {
+          outputChannel.appendLine(`✅ GO FILE: Successfully fetched task details for ${ref.taskId}`);
+          outputChannel.appendLine(`  Task name: ${task.name}`);
+        }
+        
         ref.description = task?.description || ref.description;
+        ref.taskName = task?.name || ref.taskName; // Ensure task name is updated
+        
         // If subtask, fetch parent description as well if needed
         if (ref.parentTaskId) {
-          const parentTask = await this.clickUpService.getTaskDetails(ref.parentTaskId);
-          if (parentTask && parentTask.id) {
-            ref.parentTaskName = parentTask?.name || ref.parentTaskName;
-            ref.parentTaskDescription = parentTask?.description || ref.parentTaskDescription;
+          if (isGoFile && outputChannel) {
+            outputChannel.appendLine(`🔄 GO FILE: Fetching parent task details for ${ref.parentTaskId}`);
+          }
+          
+          try {
+            const parentTask = await this.clickUpService.getTaskDetails(ref.parentTaskId);
+            if (parentTask && parentTask.id) {
+              ref.parentTaskName = parentTask?.name || ref.parentTaskName;
+              ref.parentTaskDescription = parentTask?.description || ref.parentTaskDescription;
+              
+              if (isGoFile && outputChannel) {
+                outputChannel.appendLine(`✅ GO FILE: Successfully fetched parent task details for ${ref.parentTaskId}`);
+              }
+            }
+          } catch (parentErr) {
+            if (isGoFile && outputChannel) {
+              outputChannel.appendLine(`⚠️ GO FILE: Error fetching parent task ${ref.parentTaskId}: ${parentErr}`);
+            }
+            console.error(`Error fetching parent task ${ref.parentTaskId}:`, parentErr);
           }
         }
       } catch (err) {
-        // If there's an error fetching the task, do not proceed with creating task-specific lenses
+        // If there's an error fetching the task, provide a fallback lens for Go files
+        if (isGoFile && outputChannel) {
+          outputChannel.appendLine(`❌ GO FILE: Error fetching task ${ref.taskId}: ${err}`);
+          
+          // For Go files, return a special error lens instead of empty lenses
+          return [
+            new vscode.CodeLens(new vscode.Range(line, 0, line, 10), {
+              title: `⚠️ Error loading task: ${err}`,
+              command: 'clickuplink.setupTaskReference',
+              arguments: [editor?.document.uri, ref.range],
+              tooltip: `Error: ${err}\nTry refreshing or re-authenticating with ClickUp`
+            }),
+          ];
+        }
+        
         console.error(`Error fetching task ${ref.taskId}:`, err);
         return lenses;
       }

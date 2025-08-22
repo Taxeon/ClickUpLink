@@ -46,7 +46,8 @@ export function activate(context: vscode.ExtensionContext) {
   outputChannel.appendLine('📋 CodeLens provider created');
   
   // Register CodeLens provider for clickable triggers
-  const codeLensDisposable = vscode.languages.registerCodeLensProvider('*', codeLensProvider);
+  const codeLensDisposable = vscode.languages.registerCodeLensProvider('*', codeLensProvider
+  );
   context.subscriptions.push(codeLensDisposable);
   console.log('✅ CodeLens provider registered for all file types');
 

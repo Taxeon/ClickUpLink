@@ -88,14 +88,36 @@ export class RefPositionManager {
     allKnownReferences: TaskReference[]
   ): void {
     const outputChannel = OutputChannelManager.getChannel('ClickUpLink: UpdateReferences Debug');
-    outputChannel.appendLine(`🔍 Scanning document for ClickUp markers: ${document.fileName}`);
-    console.log(`📄 Document language: ${document.languageId}`);
-    console.log(`💾 Known references count: ${allKnownReferences.length}`);
+    const isGoFile = document.languageId === 'go' || document.fileName.toLowerCase().endsWith('.go');
+    
+    // Special handling for Go files - more detailed logging
+    if (isGoFile) {
+      outputChannel.appendLine(`🔍 GO FILE: Scanning document for ClickUp markers: ${document.fileName}`);
+      outputChannel.appendLine(`📄 GO FILE language ID: ${document.languageId}`);
+      outputChannel.appendLine(`💾 GO FILE known references count: ${allKnownReferences.length}`);
+      
+      // Log existing references for debugging
+      if (allKnownReferences.length > 0) {
+        outputChannel.appendLine('📋 GO FILE Existing references:');
+        allKnownReferences.forEach((ref, index) => {
+          outputChannel.appendLine(`  ${index + 1}. Line ${ref.range.start.line}: TaskID=${ref.taskId || 'none'}, TaskName=${ref.taskName || 'none'}`);
+        });
+      }
+    } else {
+      outputChannel.appendLine(`🔍 Scanning document for ClickUp markers: ${document.fileName}`);
+      console.log(`📄 Document language: ${document.languageId}`);
+      console.log(`💾 Known references count: ${allKnownReferences.length}`);
+    }
     
     const uri = document.uri.toString();
     
     // Get the appropriate regex patterns for this document's language
     const { lineCommentRegex, blockCommentRegex } = this.getClickUpRegexPatterns(document);
+    
+    // Log the patterns we're using for Go files
+    if (isGoFile) {
+      outputChannel.appendLine(`🔍 GO FILE using patterns: lineCommentRegex=${lineCommentRegex.source}, blockCommentRegex=${blockCommentRegex?.source || 'none'}`);
+    }
 
     const activeRefs: TaskReference[] = [];
     const orphanedRefs: TaskReference[] = [];
