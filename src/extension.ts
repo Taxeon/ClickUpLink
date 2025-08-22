@@ -135,11 +135,15 @@ const changeListener = vscode.workspace.onDidChangeTextDocument((event) => {
     }
 
     // Set new timeout
-    const newTimeout = setTimeout(() => {
+    const newTimeout = setTimeout(async () => {
         outputChannel.appendLine(`⏰ Timeout triggered for ${fileName} - refreshing CodeLens`);
         
-        // First, make sure we scan the document to update references
-        vscode.commands.executeCommand('clickuplink.refreshTaskReferences');
+        // First clean the state for this document to avoid duplicates
+        await codeLensProvider.cleanStateForDocument(docUri);
+        
+        // Then update task references locally without syncing to ClickUp API
+        // This is more efficient for document changes as we only need to update positions
+        codeLensProvider.refreshTaskReferences(false);
         
         // Then, trigger a refresh of the CodeLenses
         // The refresh method fires the _onDidChangeCodeLenses event which updates the UI

@@ -131,16 +131,27 @@ export class RefPositionManager {
           seenPositions.add(positionKey);
           
           let ref = allKnownReferences.find(r => r.taskId === taskId);
+          const newRange = new vscode.Range(line, match.index, line, match.index + match[0].length);
+          
           if (!ref) {
+            // No existing reference with this taskId - create a new one
             ref = {
               taskId,
-              range: new vscode.Range(line, match.index, line, match.index + match[0].length),
+              range: newRange,
             } as TaskReference;
             console.log(`Created new reference for taskId ${taskId}`);
           } else {
-            ref.range = new vscode.Range(line, match.index, line, match.index + match[0].length);
-            console.log(`Updated existing reference for taskId ${taskId}`);
+            // Existing reference found - create a new reference object that preserves all other properties
+            // This ensures we don't lose data like taskName, status, etc.
+            const oldRange = ref.range;
+            console.log(`Updating reference position for taskId ${taskId}`);
+            console.log(`  Old position: L${oldRange.start.line}:${oldRange.start.character}`);
+            console.log(`  New position: L${line}:${match.index}`);
+            
+            // Create a new object with all existing properties but update the range
+            ref = { ...ref, range: newRange };
           }
+          
           activeRefs.push(ref);
           seenTaskIds.add(taskId);
         }
@@ -178,30 +189,63 @@ export class RefPositionManager {
         seenPositions.add(positionKey);
 
         let ref = allKnownReferences.find(r => r.taskId === taskId);
+        
         if (!ref) {
+          // No existing reference with this taskId - create a new one
           ref = {
             taskId,
             range,
           } as TaskReference;
           console.log(`Created new reference for block comment taskId ${taskId}`);
         } else {
-          ref.range = range;
-          console.log(`Updated existing reference for block comment taskId ${taskId}`);
+          // Existing reference found - create a new reference object that preserves all other properties
+          const oldRange = ref.range;
+          console.log(`Updating block comment reference position for taskId ${taskId}`);
+          console.log(`  Old position: L${oldRange.start.line}:${oldRange.start.character}`);
+          console.log(`  New position: L${range.start.line}:${range.start.character}`);
+          
+          // Create a new object with all existing properties but update the range
+          ref = { ...ref, range };
         }
+        
         activeRefs.push(ref);
         seenTaskIds.add(taskId);
       }
     }
 
+    // Create a map of all active refs by taskId for faster lookup
+    const activeRefsByTaskId = new Map<string, TaskReference>();
+    for (const ref of activeRefs) {
+      if (ref.taskId) {
+        activeRefsByTaskId.set(ref.taskId, ref);
+      }
+    }
+    
     // 3. Any stored reference not seen in this scan is orphaned
     for (const ref of allKnownReferences) {
       if (ref.taskId && !seenTaskIds.has(ref.taskId)) {
+        // This reference has a taskId but wasn't found in the document
         orphanedRefs.push(ref);
         console.log(`⚠️ Reference orphaned: ${ref.taskId} (not found in document)`);
       } else if (!ref.taskId) {
-        // Unconfigured references are always active
+        // Unconfigured references are always active (temporary)
+        // If they're not used, they'll be filtered out during the refresh
         activeRefs.push(ref);
         console.log(`ℹ️ Adding unconfigured reference (no taskId)`);
+      } else if (ref.taskId && seenTaskIds.has(ref.taskId)) {
+        // This ref has a taskId and we found it in the document
+        // Make sure its data is properly merged with the active ref
+        const activeRef = activeRefsByTaskId.get(ref.taskId);
+        if (activeRef && activeRef !== ref) {
+          // Ensure all properties from the stored reference are preserved in the active reference
+          // This helps ensure no data is lost during the update
+          Object.keys(ref).forEach(key => {
+            if (key !== 'range' && !(key in activeRef) && key in ref) {
+              // Copy over any non-range properties that might be missing
+              (activeRef as any)[key] = (ref as any)[key];
+            }
+          });
+        }
       }
     }
 
@@ -218,6 +262,30 @@ export class RefPositionManager {
    */
   static getActiveReferences(uri: string): TaskReference[] {
     return RefPositionManager.referenceMap.get(uri)?.active || [];
+  }
+
+  /**
+   * Directly set active references for a document (used when manually adding references).
+   */
+  static setActiveReferences(uri: string, refs: TaskReference[]): void {
+    const currentEntry = RefPositionManager.referenceMap.get(uri);
+    if (currentEntry) {
+      // Update existing entry
+      currentEntry.active = refs;
+    } else {
+      // Create new entry
+      RefPositionManager.referenceMap.set(uri, { active: refs, orphaned: [] });
+    }
+  }
+  
+  /**
+   * Clear all state for a document when it changes to prevent duplicate references.
+   * This is used when document content changes to ensure clean state before rescanning.
+   */
+  static clearDocumentState(uri: string): void {
+    // Remove this document from our reference map
+    RefPositionManager.referenceMap.delete(uri);
+    console.log(`🧹 Cleared document state for: ${uri}`);
   }
 
   /**

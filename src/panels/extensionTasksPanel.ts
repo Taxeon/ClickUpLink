@@ -114,15 +114,21 @@ export function registerTaskCommands(
           progress.report({ message: "Cleaning up any duplicate references..." });
           codeLensProvider.cleanupDuplicateReferences();
           
-          // Use the unified refresh method
-          await codeLensProvider.refreshFromClickUpWithOptions({
-            silent: false,
-            checkAuth: true,
-            onSuccess: () => {
-              progress.report({ message: "Updating tree view..." });
-              referencesProvider.refresh();
-            }
-          });
+          // Check auth before continuing with the sync
+          const isAuthenticated = await codeLensProvider.clickUpService.isAuthenticated();
+          if (!isAuthenticated) {
+            vscode.window.showWarningMessage('Not authenticated with ClickUp');
+            // Still refresh local references without ClickUp sync
+            await codeLensProvider.refreshTaskReferences(false);
+            return;
+          }
+          
+          // Use the enhanced refresh method with syncToClickUp=true for manual refresh
+          progress.report({ message: "Syncing with ClickUp..." });
+          await codeLensProvider.refreshTaskReferences(true);
+          
+          progress.report({ message: "Updating tree view..." });
+          referencesProvider.refresh();
         });
 
         console.log('✅ Task references refreshed with fresh ClickUp data');
