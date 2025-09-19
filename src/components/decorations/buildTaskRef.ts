@@ -14,9 +14,12 @@ export class BuildTaskRef {
   public async build(
     task: any,
     parentTask: any | null,
-    range: vscode.Range
+    range: vscode.Range,
+    preferredListId?: string
   ): Promise<TaskReference> {
-    const list = await this.clickUpService.getListDetails(task.list.id);
+    // Use the selected list (e.g., sprint list) if provided; otherwise use task's home list
+    const targetListId = preferredListId || task.list.id;
+    const list = await this.clickUpService.getListDetails(targetListId);
     const folder = await this.clickUpService.getFolderDetails(list.folder.id);
 
     return {

@@ -28,7 +28,7 @@ export class ClickUpCodeLensTasks {
     fireChangeEvent: () => void
   ): Promise<void> {
     // 1. Let user select a task
-    const { selectedTask: summaryTask, parentTask } = await this.taskGetter.selectFolder(range, undefined);
+  const { selectedTask: summaryTask, parentTask, selectedListId } = await this.taskGetter.selectFolder(range, undefined);
     if (!summaryTask?.id) {
       console.log('Task selection cancelled.');
       return;
@@ -43,7 +43,7 @@ export class ClickUpCodeLensTasks {
       }
 
       // 3. Build the new, complete reference object
-      const newReference = await this.taskRefBuilder.build(fullTask, parentTask, range);
+  const newReference = await this.taskRefBuilder.build(fullTask, parentTask, range, selectedListId);
 
       // 4. Save the updated reference
       saveTaskReference(uri.toString(), newReference);

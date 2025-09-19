@@ -38,10 +38,18 @@
 			"label": "Run Extension with Test Folder",
 			"type": "shell",
 			"command": "code",
-			"args": ["c:\\temp\\clickup-test", "--extensionDevelopmentPath=c:\\GitRepos\\ClickUpLink"],
+			"args": [
+				"c:\\temp\\clickup-test",
+				"--extensionDevelopmentPath=c:\\GitRepos\\ClickUpLink"
+			],
 			"group": "build",
 			"dependsOn": "npm: compile",
 			"problemMatcher": []
+		},
+		{
+			"label": "Compile TypeScript",
+			"type": "shell",
+			"command": "npm run compile"
 		}
 	]
 }

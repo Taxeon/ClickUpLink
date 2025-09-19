@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Authentication-aware Refresh**: Refresh operations now check authentication status and handle unauthenticated scenarios gracefully
 - **Added support for jsx/tsx files**: Now automatically detects JSX/TSX files and adds task references for them
 - **Auto Refresh Setting for clickup sync**: Settings pane contains a link to set auto refresh time with a default of 60 min and a minimum of 5 min. When ran references will be updated with current Clickup values.
+- **Add Support for Sprint Task Selection**: You can now select tasks from a sprint folder adding a reference to the task with the sprint as folder header.
 
 ### Improved
 - **Data Accuracy**: All task references now display current ClickUp status, assignees, task names, and descriptions

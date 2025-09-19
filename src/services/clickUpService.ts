@@ -79,7 +79,8 @@ export class ClickUpService {
    * Get tasks within a list
    */
   async getTasks(listId: string) {
-    return apiRequest(this.context, 'get', `list/${listId}/task`);
+    // include_timl ensures tasks that exist in multiple lists (e.g., sprint lists) are included
+    return apiRequest(this.context, 'get', `list/${listId}/task?include_timl=true`);
   }
 
   async getSubtasks(taskId: string) {
@@ -87,7 +88,8 @@ export class ClickUpService {
   }
 
   async getAllListTasks(listId: string) {
-    return apiRequest(this.context, 'get', `list/${listId}/task?subtasks=true`);
+    // Include subtasks and tasks-in-multiple-lists to cover sprint scenarios
+    return apiRequest(this.context, 'get', `list/${listId}/task?subtasks=true&include_timl=true`);
   }
 
   async getSubtasksFromParentList(taskId: string, parentListId: string) {
@@ -107,6 +109,63 @@ export class ClickUpService {
    */
   async getTaskDetails(taskId: string) {
     return apiRequest(this.context, 'get', `task/${taskId}`);
+  }
+
+  /**
+   * Batch fetch multiple tasks by IDs within a team (workspace)
+   * GET /team/{teamId}/task?task_ids[]=ID1&task_ids[]=ID2
+   * Returns an object with a `tasks` array.
+   */
+  async getTasksByIds(teamId: string, taskIds: string[]): Promise<any[]> {
+    if (!taskIds || taskIds.length === 0) return [];
+
+    const accessToken = await getAccessToken(this.context);
+    if (!accessToken) {
+      vscode.window.showErrorMessage('ClickUp access token not found. Please login again.');
+      return [];
+    }
+
+    // Build query string with repeated task_ids[] params
+    const params = new URLSearchParams();
+    for (const id of taskIds) {
+      if (id) params.append('task_ids[]', id);
+    }
+
+    const url = `${CLICKUP_API_BASE_URL}/team/${teamId}/task?${params.toString()}`;
+
+    try {
+      const response = await httpClient.get(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        // Allow a bit more time for batch requests
+        timeout: 45000,
+      });
+      const data = response.data || {};
+      const tasks = Array.isArray(data.tasks) ? data.tasks : (Array.isArray(data) ? data : []);
+      return tasks;
+    } catch (error) {
+      console.error('❌ getTasksByIds failed:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Convenience: chunked batch fetch to respect potential API limits
+   */
+  async getTasksByIdsChunked(teamId: string, taskIds: string[], chunkSize: number = 100): Promise<any[]> {
+    const chunks: string[][] = [];
+    for (let i = 0; i < taskIds.length; i += chunkSize) {
+      chunks.push(taskIds.slice(i, i + chunkSize));
+    }
+
+    const results: any[] = [];
+    for (const chunk of chunks) {
+      const tasks = await this.getTasksByIds(teamId, chunk);
+      if (tasks && tasks.length) results.push(...tasks);
+    }
+    return results;
   }
 
 

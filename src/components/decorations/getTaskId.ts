@@ -35,7 +35,7 @@ export class GetTask {
   async selectFolder(
     range: vscode.Range,
     currentFolderId?: string
-  ): Promise<{ selectedTask: any, parentTask: any }> {
+  ): Promise<{ selectedTask: any, parentTask: any, selectedListId?: string }> {
     const editor = vscode.window.activeTextEditor;
     if (!editor) return { selectedTask: null, parentTask: null };
     try {
@@ -68,7 +68,7 @@ export class GetTask {
         actualFolder = newFolder;
       }
       // Continue to list selection
-      return await this.selectList(range, actualFolder.id);
+  return await this.selectList(range, actualFolder.id);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to select folder: ${error}`);
       return { selectedTask: null, parentTask: null };
@@ -82,7 +82,7 @@ export class GetTask {
     range: vscode.Range,
     folderId: string,
     currentListId?: string
-  ): Promise<{ selectedTask: any, parentTask: any }> {
+  ): Promise<{ selectedTask: any, parentTask: any, selectedListId?: string }> {
     const editor = vscode.window.activeTextEditor;
     if (!editor) return { selectedTask: null, parentTask: null };
     try {
@@ -100,14 +100,16 @@ export class GetTask {
         placeHolder: 'Select list or create new',
       });
       if (!selectedList) return { selectedTask: null, parentTask: null };
-      let actualList = selectedList.list;
+  let actualList = selectedList.list;
       if (selectedList.isNew) {
         const newList = await this.createNewItem({ id: folderId }, 'list');
         if (!newList) return { selectedTask: null, parentTask: null };
         actualList = newList;
       }
       // Continue to task selection
-      return await this.selectTask(range, actualList.id);
+  const result = await this.selectTask(range, actualList.id);
+  // Attach the selected list id so downstream can prefer sprint list context
+  return { ...result, selectedListId: actualList.id };
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to select list: ${error}`);
       return { selectedTask: null, parentTask: null };
@@ -121,7 +123,7 @@ export class GetTask {
     range: vscode.Range,
     listId: string,
     currentTaskId?: string
-  ): Promise<{ selectedTask: any, parentTask: any }> {
+  ): Promise<{ selectedTask: any, parentTask: any, selectedListId?: string }> {
     const editor = vscode.window.activeTextEditor;
     if (!editor) return { selectedTask: null, parentTask: null };
     try {
@@ -162,7 +164,7 @@ export class GetTask {
     range: vscode.Range,
     parentTask: any,
     parentListId: string
-  ): Promise<{ selectedTask: any, parentTask: any }> {
+  ): Promise<{ selectedTask: any, parentTask: any, selectedListId?: string }> {
     const editor = vscode.window.activeTextEditor;
     if (!editor) return { selectedTask: null, parentTask: null };
     try {
@@ -183,7 +185,7 @@ export class GetTask {
       });
       if (!selectedSubtask) {
         // User cancelled: use main task
-        return { selectedTask: parentTask, parentTask: null };
+        return { selectedTask: parentTask, parentTask: null, selectedListId: parentListId };
       }
       let actualSubtask = selectedSubtask.subtask;
       if (selectedSubtask.isNew) {
@@ -191,7 +193,7 @@ export class GetTask {
         if (!actualSubtask) return { selectedTask: null, parentTask: null };
       }
       // Return the selected/created subtask and its parent
-      return { selectedTask: actualSubtask, parentTask };
+  return { selectedTask: actualSubtask, parentTask, selectedListId: parentListId };
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to select subtask: ${error}`);
       return { selectedTask: null, parentTask: null };
@@ -293,10 +295,10 @@ export class GetTask {
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
   ): Promise<void> {
-    const { selectedTask, parentTask } = await this.selectFolder(range, currentFolderId);
+  const { selectedTask, parentTask, selectedListId } = await this.selectFolder(range, currentFolderId);
     if (!selectedTask) return;
 
-    const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range);
+  const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range, selectedListId);
     const editor = vscode.window.activeTextEditor;
     if (editor) {
       // First update the anchor tag (this will trigger document change events)
@@ -317,10 +319,10 @@ export class GetTask {
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
   ): Promise<void> {
-    const { selectedTask, parentTask } = await this.selectList(range, folderId, currentListId);
+  const { selectedTask, parentTask, selectedListId } = await this.selectList(range, folderId, currentListId);
     if (!selectedTask) return;
 
-    const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range);
+  const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range, selectedListId);
     const editor = vscode.window.activeTextEditor;
     if (editor) {
       // First update the anchor tag (this will trigger document change events)
@@ -395,7 +397,7 @@ export class GetTask {
     saveTaskReference: (uri: string, reference: TaskReference) => void,
     fireChangeEvent: () => void
   ): Promise<void> {
-    const { selectedTask, parentTask } = await this.selectTask(range, listId, currentTaskId);
+  const { selectedTask, parentTask, selectedListId } = await this.selectTask(range, listId, currentTaskId);
     if (!selectedTask) return;
 
     const editor = vscode.window.activeTextEditor;
@@ -414,6 +416,11 @@ export class GetTask {
             saveTaskReference, 
             fireChangeEvent
           );
+
+          // Build and persist the updated reference, then notify listeners
+          const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range, selectedListId ?? listId);
+          saveTaskReference(editor.document.uri.toString(), newReference);
+          fireChangeEvent();
         } else {
           vscode.window.showErrorMessage('Could not find original task to update');
         }
@@ -457,6 +464,11 @@ export class GetTask {
             fireChangeEvent,
             "subtask"
           );
+
+          // Build and persist the updated reference, then notify listeners
+          const newReference = await this.taskRefBuilder.build(selectedTask, parentTask, range, listId);
+          saveTaskReference(editor.document.uri.toString(), newReference);
+          fireChangeEvent();
         } else {
           // If no existing reference was found, just create a new one
           vscode.window.showErrorMessage('Could not find original task to update');

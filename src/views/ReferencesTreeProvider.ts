@@ -28,18 +28,33 @@ export class ReferencesTreeProvider implements vscode.TreeDataProvider<Reference
   private filterReferencesByWorkspace(data: any): any {
     const currentWorkspacePath = this.getCurrentWorkspaceFolderPath();
     if (!currentWorkspacePath) {
-      return data; // If no workspace, show all references
+      return {}; // No workspace open; show nothing to avoid cross-project bleed
     }
 
+    const normalizedCurrent = currentWorkspacePath.replace(/\\/g, '/').toLowerCase();
     const filteredData: any = {};
     for (const uri in data) {
       const refs = data[uri] || [];
+      const docUri = vscode.Uri.parse(uri);
+      const docWorkspacePath = this.getWorkspaceFolderPath(docUri);
+
+      // Skip files that are not inside the current workspace at all
+      if (!docWorkspacePath) {
+        continue;
+      }
+
+      const normalizedDocWs = docWorkspacePath.replace(/\\/g, '/').toLowerCase();
+      if (normalizedDocWs !== normalizedCurrent) {
+        continue;
+      }
+
       const filteredRefs = refs.filter((ref: any) => {
-        // If no workspace folder path is stored (legacy references), show them
-        if (!ref.workspaceFolderPath) {
-          return true;
+        // Prefer explicit workspaceFolderPath when present
+        if (ref.workspaceFolderPath) {
+          return ref.workspaceFolderPath.replace(/\\/g, '/').toLowerCase() === normalizedCurrent;
         }
-        return ref.workspaceFolderPath === currentWorkspacePath;
+        // Legacy: infer from document's workspace
+        return true; // already ensured doc is in current workspace
       });
       
       if (filteredRefs.length > 0) {

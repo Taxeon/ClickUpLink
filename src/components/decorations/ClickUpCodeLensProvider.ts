@@ -49,8 +49,9 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       outputChannel.appendLine(`🚀 GO FILE: provideCodeLenses for ${document.fileName}`);
     }
     
-    const allKnownReferences = this.taskReferences.get(document.uri.toString()) || [];
-    //RefPositionManager.updateReferencesFromMarkers(document, allKnownReferences);
+  const allKnownReferences = this.taskReferences.get(document.uri.toString()) || [];
+  // Ensure current document is scanned for ClickUp markers so lenses appear when file opens
+  RefPositionManager.updateReferencesFromMarkers(document, allKnownReferences);
 
     const activeReferences = RefPositionManager.getActiveReferences(document.uri.toString());
     
@@ -78,49 +79,18 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       }
     }
 
-    // Inflate any new references that have a taskId but are missing other details
-    let needToSaveChanges = false;
-    for (const ref of activeReferences) {
-      if (ref.taskId && !ref.taskName) {
-        if (isGoFile) {
-          outputChannel.appendLine(`🔄 GO FILE: Building reference for taskId ${ref.taskId} at line ${ref.range.start.line}`);
-        }
-          
-        try {
-          const newReference = await this.tasks.buildReferenceFromTaskId(
-            ref.taskId,
-            document,
-            ref.range
-          );
-          
-          if (newReference) {
-            if (isGoFile) {
-              outputChannel.appendLine(`✅ GO FILE: Successfully built reference for taskId ${ref.taskId}`);
-              outputChannel.appendLine(`  TaskName: ${newReference.taskName || 'none'}`);
-              outputChannel.appendLine(`  FolderName: ${newReference.folderName || 'none'}`);
-              outputChannel.appendLine(`  ListName: ${newReference.listName || 'none'}`);
-            }
-            
-            this.saveTaskReference(document.uri.toString(), newReference, true); // Skip individual persists
-            needToSaveChanges = true;
-          } else if (isGoFile) {
-            outputChannel.appendLine(`❌ GO FILE: Failed to build reference for taskId ${ref.taskId} - returned undefined`);
-          }
-        } catch (error) {
-          if (isGoFile) {
-            outputChannel.appendLine(`❌ GO FILE: Error building reference for taskId ${ref.taskId}: ${error}`);
-          }
-          console.error(`Error building reference for taskId ${ref.taskId}:`, error);
-        }
+    // If any refs have a taskId but are missing core details, schedule a debounced background refresh
+    const hasMissingInfo = activeReferences.some(r => r.taskId && (!r.taskName || !r.taskStatus));
+    if (hasMissingInfo) {
+      const channel = OutputChannelManager.getChannel('ClickUpLink: UpdateReferences Debug');
+      channel.appendLine(`⏳ Missing task info detected; scheduling background refresh`);
+      // Debounce to avoid refresh storms while typing
+      if ((this as any)._missingInfoTimer) {
+        clearTimeout((this as any)._missingInfoTimer);
       }
-    }
-    
-    // Only persist once if any changes were made
-    if (needToSaveChanges) {
-      if (isGoFile) {
-        outputChannel.appendLine(`💾 GO FILE: Persisting references after building`);
-      }
-      this.persistReferences();
+      (this as any)._missingInfoTimer = setTimeout(() => {
+        this.refreshTaskReferences(true).catch(err => console.warn('Background refresh error:', err));
+      }, 500);
     }
 
     // After inflation, re-fetch active references to ensure they are up-to-date
@@ -223,81 +193,19 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       outputChannel.appendLine(`  TaskName: ${ref.taskName || 'none'}`);
     }
 
-    // Fetch latest description from ClickUp
-    if (ref.taskId) {
-      if (isGoFile && outputChannel) {
-        outputChannel.appendLine(`🔄 GO FILE: Fetching task details for ${ref.taskId}`);
-      }
-      
-      try {
-        const task = await this.clickUpService.getTaskDetails(ref.taskId);
-        if (!task || !task.id) {
-          if (isGoFile && outputChannel) {
-            outputChannel.appendLine(`⚠️ GO FILE: Task not found or invalid for ${ref.taskId}`);
-          }
-          // If task is not found or invalid, provide a fallback lens
-          if (isGoFile) {
-            return [
-              new vscode.CodeLens(new vscode.Range(line, 0, line, 10), {
-                title: `⚠️ Task Not Found: ${ref.taskId}`,
-                command: 'clickuplink.setupTaskReference',
-                arguments: [editor?.document.uri, ref.range],
-              }),
-            ];
-          }
-          return lenses;
-        }
-        
-        if (isGoFile && outputChannel) {
-          outputChannel.appendLine(`✅ GO FILE: Successfully fetched task details for ${ref.taskId}`);
-          outputChannel.appendLine(`  Task name: ${task.name}`);
-        }
-        
-        ref.description = task?.description || ref.description;
-        ref.taskName = task?.name || ref.taskName; // Ensure task name is updated
-        
-        // If subtask, fetch parent description as well if needed
-        if (ref.parentTaskId) {
-          if (isGoFile && outputChannel) {
-            outputChannel.appendLine(`🔄 GO FILE: Fetching parent task details for ${ref.parentTaskId}`);
-          }
-          
-          try {
-            const parentTask = await this.clickUpService.getTaskDetails(ref.parentTaskId);
-            if (parentTask && parentTask.id) {
-              ref.parentTaskName = parentTask?.name || ref.parentTaskName;
-              ref.parentTaskDescription = parentTask?.description || ref.parentTaskDescription;
-              
-              if (isGoFile && outputChannel) {
-                outputChannel.appendLine(`✅ GO FILE: Successfully fetched parent task details for ${ref.parentTaskId}`);
-              }
-            }
-          } catch (parentErr) {
-            if (isGoFile && outputChannel) {
-              outputChannel.appendLine(`⚠️ GO FILE: Error fetching parent task ${ref.parentTaskId}: ${parentErr}`);
-            }
-            console.error(`Error fetching parent task ${ref.parentTaskId}:`, parentErr);
-          }
-        }
-      } catch (err) {
-        // If there's an error fetching the task, provide a fallback lens for Go files
-        if (isGoFile && outputChannel) {
-          outputChannel.appendLine(`❌ GO FILE: Error fetching task ${ref.taskId}: ${err}`);
-          
-          // For Go files, return a special error lens instead of empty lenses
-          return [
-            new vscode.CodeLens(new vscode.Range(line, 0, line, 10), {
-              title: `⚠️ Error loading task: ${err}`,
-              command: 'clickuplink.setupTaskReference',
-              arguments: [editor?.document.uri, ref.range],
-              tooltip: `Error: ${err}\nTry refreshing or re-authenticating with ClickUp`
-            }),
-          ];
-        }
-        
-        console.error(`Error fetching task ${ref.taskId}:`, err);
-        return lenses;
-      }
+    // Avoid network calls here to keep CodeLens rendering snappy
+    if (ref.taskId && !ref.taskName) {
+      lenses.push(
+        this.createBreadcrumbLens(
+          line,
+          col,
+          '$(sync~spin) Loading task…',
+          'Fetching latest task details in background',
+          'clickuplink.openInClickUp',
+          [ref.taskId]
+        )
+      );
+      col += '$(sync~spin) Loading task…'.length + 1;
     }
 
     // Streamlined breadcrumb creation with helper
@@ -500,16 +408,18 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
   // Streamlined persistence with functional approach
   private persistReferences(): void {
     const dataObject = Object.fromEntries(
-      Array.from(this.taskReferences.entries()).map(([uri, references]) => [
-        uri,
-        references.map(ref => ({
+      Array.from(this.taskReferences.entries()).map(([uri, references]) => {
+        const wsPath = this.getWorkspaceFolderPath(vscode.Uri.parse(uri));
+        const normalized = references.map(ref => ({
           ...ref,
+          workspaceFolderPath: ref.workspaceFolderPath ?? wsPath,
           range: {
             start: { line: ref.range.start.line, character: ref.range.start.character },
             end: { line: ref.range.end.line, character: ref.range.end.character },
           },
-        })),
-      ])
+        }));
+        return [uri, normalized];
+      })
     );
 
     this.context.globalState.update('clickup.taskReferences', JSON.stringify(dataObject));
@@ -523,18 +433,35 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       const data = JSON.parse(serialized);
       this.taskReferences.clear();
 
-      Object.entries(data).forEach(([uri, refs]) => {
+      const currentWorkspace = this.getCurrentWorkspaceFolderPath();
+      const normalizedWs = currentWorkspace ? currentWorkspace.replace(/\\/g, '/').toLowerCase() : undefined;
+
+      Object.entries<any>(data).forEach(([uri, refs]) => {
         if (!Array.isArray(refs)) return;
-        const restoredRefs = refs.map(ref => ({
-          ...ref,
-          range: new vscode.Range(
-            ref.range.start.line,
-            ref.range.start.character,
-            ref.range.end.line,
-            ref.range.end.character
-          ),
-        }));
-        this.taskReferences.set(uri, restoredRefs);
+        const docWs = this.getWorkspaceFolderPath(vscode.Uri.parse(uri));
+        const normalizedDocWs = docWs ? docWs.replace(/\\/g, '/').toLowerCase() : undefined;
+
+        // If we have a workspace open, ignore files outside it
+        if (normalizedWs && normalizedDocWs && normalizedDocWs !== normalizedWs) {
+          return;
+        }
+
+        const restoredRefs = refs
+          .map((ref: any) => ({
+            ...ref,
+            workspaceFolderPath: ref.workspaceFolderPath ?? docWs,
+            range: new vscode.Range(
+              ref.range.start.line,
+              ref.range.start.character,
+              ref.range.end.line,
+              ref.range.end.character
+            ),
+          }))
+          .filter((ref: any) => !normalizedWs || (ref.workspaceFolderPath || docWs || '').replace(/\\/g,'/').toLowerCase() === normalizedWs);
+
+        if (restoredRefs.length > 0) {
+          this.taskReferences.set(uri, restoredRefs);
+        }
       });
     } catch (error) {
       console.error('Failed to load task references:', error);
@@ -862,9 +789,15 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
     outputChannel.appendLine(`🔄 refreshTaskReferences called with syncToClickUp=${syncToClickUp}`);
     
     try {
-      // Step 1: Get all text documents in the workspace
-      const allDocuments = await vscode.workspace.findFiles('**/*.*', '**/node_modules/**');
-      outputChannel.appendLine(`📂 Found ${allDocuments.length} documents in workspace to scan for anchor tags`);
+  // Step 1: Determine candidate documents to scan (avoid scanning entire workspace)
+  const candidateUris = new Set<string>();
+  // Add all URIs we already track
+  for (const uri of this.taskReferences.keys()) candidateUris.add(uri);
+  // Add currently open documents to capture new anchors
+  for (const doc of vscode.workspace.textDocuments) candidateUris.add(doc.uri.toString());
+
+  const candidateList = Array.from(candidateUris).map(u => vscode.Uri.parse(u));
+  outputChannel.appendLine(`📂 Scanning ${candidateList.length} candidate documents (tracked + open)`);
       
       // Step 2: Track existing references to compare changes later
       const existingReferences = new Map<string, Map<string, TaskReference>>();
@@ -891,9 +824,11 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       const uniqueTaskIds = new Set<string>();
       
       // Process each document to find ClickUp reference markers
-      for (const docUri of allDocuments) {
+    for (const docUri of candidateList) {
         try {
-          const document = await vscode.workspace.openTextDocument(docUri);
+      // Reuse already-open document if available
+      const opened = vscode.workspace.textDocuments.find(d => d.uri.toString() === docUri.toString());
+      const document = opened ?? await vscode.workspace.openTextDocument(docUri);
           const uri = document.uri.toString();
           
           // Get all known references for this document from our storage
@@ -1005,6 +940,13 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
           outputChannel.appendLine(`➖ Reference at ${uri}:${posKey} no longer exists`);
         }
         
+        // Ensure workspace scoping on all references before storing
+        const wsPath = this.getWorkspaceFolderPath(vscode.Uri.parse(uri));
+        updatedUriRefs.forEach(r => {
+          if (r && !r.workspaceFolderPath) {
+            (r as any).workspaceFolderPath = wsPath;
+          }
+        });
         // Store the updated references for this URI
         updatedReferences.set(uri, updatedUriRefs);
       }
@@ -1019,89 +961,85 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       
       outputChannel.appendLine(`📊 Changes detected: ${addedReferences} added, ${deletedReferences} deleted, ${positionChanges} position/ID changes`);
       
-      // Step 5: If syncToClickUp is true, fetch latest data from ClickUp API
+      // Step 5: If syncToClickUp is true, fetch latest data from ClickUp API using batch endpoint
       if (syncToClickUp && uniqueTaskIds.size > 0) {
-        outputChannel.appendLine(`🔄 Syncing with ClickUp for ${uniqueTaskIds.size} unique task IDs...`);
-        
-        // Build a map of all existing references by task ID for faster lookup
-        const refsByTaskId = new Map<string, TaskReference[]>();
-        for (const [uri, refs] of updatedReferences.entries()) {
-          for (const ref of refs) {
-            if (ref.taskId) {
-              if (!refsByTaskId.has(ref.taskId)) {
-                refsByTaskId.set(ref.taskId, []);
-              }
-              refsByTaskId.get(ref.taskId)!.push(ref);
-            }
+        outputChannel.appendLine(`🔄 Syncing with ClickUp for ${uniqueTaskIds.size} unique task IDs (batched)...`);
+
+        // Determine team/workspace id for batch fetch
+        let teamId = this.context.workspaceState.get<string>('clickup.currentWorkspaceId');
+        if (!teamId) {
+          try {
+            const teams = await this.clickUpService.getWorkspaces();
+            teamId = teams?.[0]?.id;
+          } catch (e) {
+            outputChannel.appendLine(`⚠️ Unable to resolve workspace/team id: ${e}`);
           }
         }
-        
-        let refreshedCount = 0;
-        let errorCount = 0;
-        
-        // Process each unique task ID
-        for (const taskId of uniqueTaskIds) {
-          try {
-            outputChannel.appendLine(`🔍 Refreshing task ${taskId} from ClickUp API...`);
-            
-            // Fetch latest task details from ClickUp API
-            const freshTask = await this.clickUpService.getTaskDetails(taskId);
-            
-            if (freshTask && freshTask.id) {
-              // Update all references for this task ID
-              const refsForTask = refsByTaskId.get(taskId) || [];
-              
-              for (const ref of refsForTask) {
-                // Update the reference with fresh data
-                ref.taskName = freshTask.name;
-                ref.description = freshTask.description;
-                ref.status = freshTask.status?.status || ref.status;
-                ref.taskStatus = freshTask.status || ref.taskStatus;
-                ref.assignee = freshTask.assignees && freshTask.assignees.length > 0 ? freshTask.assignees[0] : undefined;
-                ref.assignees = freshTask.assignees || [];
-                ref.lastUpdated = new Date().toISOString();
-                ref.listId = freshTask.list?.id || ref.listId;
-                ref.listName = freshTask.list?.name || ref.listName;
-                ref.folderId = freshTask.folder?.id || ref.folderId;
-                ref.folderName = freshTask.folder?.name || ref.folderName;
-                
-                // If this is a subtask, also refresh parent task info
-                if (freshTask.parent) {
-                  try {
-                    const parentTask = await this.clickUpService.getTaskDetails(freshTask.parent);
-                    if (parentTask && parentTask.id) {
-                      ref.parentTaskId = parentTask.id;
-                      ref.parentTaskName = parentTask.name;
-                      ref.parentTaskDescription = parentTask.description;
-                    }
-                  } catch (parentError) {
-                    console.warn(`⚠️ Could not refresh parent task ${freshTask.parent}:`, parentError);
-                  }
+
+        if (!teamId) {
+          outputChannel.appendLine('⚠️ No workspace/team ID set. Skipping ClickUp sync.');
+        } else {
+          // Map refs by task id
+          const refsByTaskId = new Map<string, TaskReference[]>();
+          for (const [, refs] of updatedReferences.entries()) {
+            for (const ref of refs) {
+              if (ref.taskId) {
+                if (!refsByTaskId.has(ref.taskId)) refsByTaskId.set(ref.taskId, []);
+                refsByTaskId.get(ref.taskId)!.push(ref);
+              }
+            }
+          }
+
+          // Batch fetch tasks
+          const taskIdList = Array.from(uniqueTaskIds);
+          const tasks = await this.clickUpService.getTasksByIdsChunked(teamId, taskIdList, 75);
+          const tasksById = new Map<string, any>();
+          for (const t of tasks) tasksById.set(t.id, t);
+
+          // Collect parent ids for another batch
+          const parentIds = new Set<string>();
+          for (const t of tasks) if (t.parent) parentIds.add(t.parent);
+          let parentTasksById = new Map<string, any>();
+          if (parentIds.size > 0) {
+            const parents = await this.clickUpService.getTasksByIdsChunked(teamId, Array.from(parentIds), 75);
+            parentTasksById = new Map(parents.map((p: any) => [p.id, p]));
+          }
+
+          let refreshedCount = 0;
+          for (const [taskId, refs] of refsByTaskId.entries()) {
+            const freshTask = tasksById.get(taskId);
+            if (!freshTask) continue;
+            for (const ref of refs) {
+              ref.taskName = freshTask.name || ref.taskName;
+              ref.description = freshTask.description ?? ref.description;
+              ref.status = freshTask.status?.status || ref.status;
+              ref.taskStatus = freshTask.status || ref.taskStatus;
+              ref.assignee = freshTask.assignees && freshTask.assignees.length > 0 ? freshTask.assignees[0] : undefined;
+              ref.assignees = freshTask.assignees || [];
+              ref.lastUpdated = new Date().toISOString();
+              ref.listId = freshTask.list?.id || ref.listId;
+              ref.listName = freshTask.list?.name || ref.listName;
+              ref.folderId = freshTask.folder?.id || ref.folderId;
+              ref.folderName = freshTask.folder?.name || ref.folderName;
+
+              if (freshTask.parent) {
+                const p = parentTasksById.get(freshTask.parent);
+                if (p) {
+                  ref.parentTaskId = p.id;
+                  ref.parentTaskName = p.name;
+                  ref.parentTaskDescription = p.description;
+                } else {
+                  ref.parentTaskId = freshTask.parent;
                 }
               }
-              
-              refreshedCount += refsForTask.length;
-              outputChannel.appendLine(`✅ Successfully refreshed ${refsForTask.length} references for task ${taskId}`);
-            } else {
-              outputChannel.appendLine(`⚠️ Task ${taskId} not found or invalid in ClickUp API`);
-              errorCount++;
+              refreshedCount++;
             }
-          } catch (error) {
-            console.error(`❌ Failed to refresh task ${taskId}:`, error);
-            outputChannel.appendLine(`❌ Failed to refresh task ${taskId}: ${error}`);
-            errorCount++;
           }
-        }
-        
-        outputChannel.appendLine(`🔄 ClickUp sync complete: Refreshed ${refreshedCount} references, ${errorCount} errors`);
-        
-        // Show notification only for API sync
-        if (refreshedCount > 0) {
-          vscode.window.showInformationMessage(
-            `Refreshed ${refreshedCount} task references from ClickUp${errorCount > 0 ? ` (${errorCount} errors)` : ''}`
-          );
-        } else if (errorCount === 0) {
-          vscode.window.showInformationMessage('No task references to refresh from ClickUp');
+
+          outputChannel.appendLine(`🔄 ClickUp batch sync complete: Refreshed ${refreshedCount} references`);
+          if (refreshedCount > 0) {
+            vscode.window.showInformationMessage(`Refreshed ${refreshedCount} task references from ClickUp`);
+          }
         }
       }
       
@@ -1110,6 +1048,11 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       this.taskReferences.clear();
       for (const [uri, refs] of updatedReferences.entries()) {
         if (refs.length > 0) {
+          // Double-safeguard workspace scoping
+          const wsPath = this.getWorkspaceFolderPath(vscode.Uri.parse(uri));
+          refs.forEach(r => {
+            if (r && !r.workspaceFolderPath) (r as any).workspaceFolderPath = wsPath;
+          });
           this.taskReferences.set(uri, refs);
         }
       }
@@ -1204,9 +1147,12 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
         }
         
         // Filter references within active URIs to only keep those with active task IDs
-        const validRefs = refs.filter((ref: any) => 
-          !ref.taskId || activeTaskIds.has(ref.taskId)
-        );
+        const validRefs = refs
+          .map((ref: any) => ({
+            ...ref,
+            workspaceFolderPath: ref.workspaceFolderPath || this.getWorkspaceFolderPath(vscode.Uri.parse(uri))
+          }))
+          .filter((ref: any) => !ref.taskId || activeTaskIds.has(ref.taskId));
         
         if (validRefs.length > 0) {
           cleanedData[uri] = validRefs;
