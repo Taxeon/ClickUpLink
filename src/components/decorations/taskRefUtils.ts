@@ -38,6 +38,7 @@ export class TaskReferenceUtils {
       taskStatus: task.status || { status: 'Open', color: '#3b82f6' },
       assignee: task.assignees && task.assignees.length > 0 ? task.assignees[0] : undefined,
       assignees: task.assignees || [],
+      priority: task.priority ?? undefined,
       lastUpdated: new Date().toISOString(),
       parentTaskId: parentTask?.id,
       parentTaskName: parentTask?.name,

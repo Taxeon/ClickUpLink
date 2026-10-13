@@ -199,7 +199,8 @@ export class ReferencesTreeProvider implements vscode.TreeDataProvider<Reference
             } : undefined,
             element.uri, // Pass the URI for deletion
             ref.range?.start?.line, // Pass line for deletion
-            ref.range?.start?.character // Pass character for deletion
+            ref.range?.start?.character, // Pass character for deletion
+            ref.priority?.priority?.toLowerCase()
           ));
         });
 
@@ -238,7 +239,8 @@ export class ReferenceTreeItem extends vscode.TreeItem {
     public readonly command?: vscode.Command,
     public readonly uri?: string,
     public readonly line?: number,
-    public readonly character?: number
+    public readonly character?: number,
+    public readonly priority?: string
   ) {
     super(label, collapsibleState);
     this.contextValue = contextValue;
@@ -261,7 +263,19 @@ export class ReferenceTreeItem extends vscode.TreeItem {
         this.iconPath = new vscode.ThemeIcon('file');
         break;
       case 'reference':
-        this.iconPath = new vscode.ThemeIcon('link', new vscode.ThemeColor('charts.blue'));
+        switch (priority) {
+          case 'urgent':
+            this.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.red'));
+            break;
+          case 'high':
+            this.iconPath = new vscode.ThemeIcon('link', new vscode.ThemeColor('charts.red'));
+            break;
+          case 'low':
+            this.iconPath = new vscode.ThemeIcon('link', new vscode.ThemeColor('charts.green'));
+            break;
+          default: // normal or no priority
+            this.iconPath = new vscode.ThemeIcon('link', new vscode.ThemeColor('charts.blue'));
+        }
         break;
       case 'unconfigured-reference':
         this.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow'));

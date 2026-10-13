@@ -105,6 +105,13 @@ export class ClickUpService {
   }
 
   /**
+   * Update task priority (1=urgent, 2=high, 3=normal, 4=low, null=none)
+   */
+  async updateTaskPriority(taskId: string, priority: number | null) {
+    return apiRequest(this.context, 'put', `task/${taskId}`, { priority });
+  }
+
+  /**
    * Get task details
    */
   async getTaskDetails(taskId: string) {

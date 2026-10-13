@@ -1,8 +1,9 @@
 {
   "name": "clickuplink",
   "displayName": "ClickUpLink",
-  "description": "VSCode extension for ClickUp integration using React-inspired architecture.",  "version": "1.7.3",
-  "publisher": "clickuplink", 
+  "description": "VSCode extension for ClickUp integration using React-inspired architecture.",
+  "version": "1.7.4",
+  "publisher": "clickuplink",
   "license": "GPL-3.0-or-later",
   "author": {
     "name": "Kenneth Romero (AMGameDev)"
@@ -18,23 +19,28 @@
   "galleryBanner": {
     "color": "#C80000",
     "theme": "dark"
-  },  "engines": {
+  },
+  "engines": {
     "vscode": "^1.70.0"
   },
   "categories": [
     "Other"
   ],
-  "extensionKind": ["workspace"],
+  "extensionKind": [
+    "workspace"
+  ],
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": false
     }
   },
-  "browser": "./out/extension.js",  "activationEvents": [
+  "browser": "./out/extension.js",
+  "activationEvents": [
     "onStartupFinished",
     "onUri"
   ],
-  "main": "./out/extension.js",  "contributes": {
+  "main": "./out/extension.js",
+  "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
@@ -54,7 +60,7 @@
         },
         {
           "id": "clickup-workspace",
-          "name": "Workspace", 
+          "name": "Workspace",
           "when": "clickup:authenticated",
           "icon": "$(organization)"
         },
@@ -71,7 +77,8 @@
           "icon": "$(gear)"
         }
       ]
-    },    "commands": [
+    },
+    "commands": [
       {
         "command": "clickuplink.logout",
         "title": "ClickUpLink: Logout"
@@ -121,6 +128,10 @@
       {
         "command": "clickuplink.changeAssignee",
         "title": "ClickUpLink: Change Assignee"
+      },
+      {
+        "command": "clickuplink.changePriority",
+        "title": "ClickUpLink: Change Priority"
       },
       {
         "command": "clickuplink.openInClickUp",
@@ -174,7 +185,10 @@
         },
         "clickupLink.theme": {
           "type": "string",
-          "enum": ["light", "dark"],
+          "enum": [
+            "light",
+            "dark"
+          ],
           "default": "light",
           "description": "Theme for ClickUp Link UI elements"
         },
@@ -220,7 +234,11 @@
         },
         "clickupLink.insertion.insertFormat": {
           "type": "string",
-          "enum": ["reference", "link", "mention"],
+          "enum": [
+            "reference",
+            "link",
+            "mention"
+          ],
           "default": "reference",
           "description": "Default format for task insertion"
         },
@@ -277,8 +295,11 @@
             "type": "string"
           },
           "default": [],
-          "description": "Custom trigger words for task detection"        }      }
-    },    "menus": {
+          "description": "Custom trigger words for task detection"
+        }
+      }
+    },
+    "menus": {
       "view/title": [
         {
           "command": "clickuplink.refreshTaskReferences",
@@ -318,7 +339,8 @@
     "@types/node": "18.x",
     "@typescript-eslint/eslint-plugin": "^5.31.0",
     "@typescript-eslint/parser": "^5.31.0",
-    "eslint": "^8.20.0",    "typescript": "^4.7.4",
+    "eslint": "^8.20.0",
+    "typescript": "^4.7.4",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "react": "^18.2.0",
@@ -339,7 +361,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "dev": "npm run compile && npm run watch"  },
-  "dependencies": {
-  }
+    "dev": "npm run compile && npm run watch"
+  },
+  "dependencies": {}
 }

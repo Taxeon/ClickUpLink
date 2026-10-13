@@ -303,6 +303,15 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
         tooltip: `Change assignee\nDescription: ${ref.description || 'No description set'}`,
       },
       {
+        condition: true, // Always show priority
+        text: ref.priority?.priority
+          ? `🚩 ${ref.priority.priority.charAt(0).toUpperCase()}${ref.priority.priority.slice(1)}`
+          : '🚩 No priority',
+        command: 'clickuplink.changePriority',
+        args: [ref.range, ref.taskId],
+        tooltip: `Change priority\nDescription: ${ref.description || 'No description set'}`,
+      },
+      {
         condition: true, // Always show link
         text: '🔗 ClickUp',
         command: 'clickuplink.openInClickUp',
@@ -342,6 +351,7 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
       ref.taskName && `${ref.parentTaskId ? '🔗' : '📋'} ${ref.taskName}`,
       (ref.status || ref.taskStatus?.status) && `🔄 ${ref.taskStatus?.status || ref.status}`,
       ref.assignee && `👤 ${ref.assignee.username}`,
+      ref.priority?.priority && `🚩 ${ref.priority.priority}`,
     ].filter(Boolean);
 
     return parts.join(' | ');
@@ -529,6 +539,10 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
 
   async changeAssignee(range: vscode.Range, taskId: string): Promise<void> {
     await this.executeTaskCommand(range, this.tasks.changeAssignee, taskId);
+  }
+
+  async changePriority(range: vscode.Range, taskId: string): Promise<void> {
+    await this.executeTaskCommand(range, this.tasks.changePriority, taskId);
   }
 
   async openInClickUp(taskId: string): Promise<void> {
@@ -1016,6 +1030,7 @@ export class ClickUpCodeLensProvider implements vscode.CodeLensProvider {
               ref.taskStatus = freshTask.status || ref.taskStatus;
               ref.assignee = freshTask.assignees && freshTask.assignees.length > 0 ? freshTask.assignees[0] : undefined;
               ref.assignees = freshTask.assignees || [];
+              ref.priority = freshTask.priority ?? undefined;
               ref.lastUpdated = new Date().toISOString();
               ref.listId = freshTask.list?.id || ref.listId;
               ref.listName = freshTask.list?.name || ref.listName;

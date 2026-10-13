@@ -112,6 +112,7 @@ export class ClickUpCodeLensTasks {
         assignee:
           newTask.assignees && newTask.assignees.length > 0 ? newTask.assignees[0] : undefined,
         assignees: newTask.assignees || [],
+        priority: newTask.priority ?? undefined,
         lastUpdated: new Date().toISOString(),
       });
       fireChangeEvent();
@@ -168,6 +169,56 @@ export class ClickUpCodeLensTasks {
       vscode.window.showInformationMessage(`Status updated: ${selected.status.status}`);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to change status: ${error}`);
+    }
+  }
+
+  async changePriority(
+    range: vscode.Range,
+    taskId: string,
+    getTaskReference: (uri: string, range: vscode.Range) => TaskReference | undefined,
+    saveTaskReference: (uri: string, reference: TaskReference) => void,
+    fireChangeEvent: () => void
+  ): Promise<void> {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
+
+    const options = [
+      { label: '🔴 Urgent', id: '1', value: 1, name: 'urgent', color: '#f50000' },
+      { label: '🟠 High', id: '2', value: 2, name: 'high', color: '#ffcc00' },
+      { label: '🔵 Normal', id: '3', value: 3, name: 'normal', color: '#6fddff' },
+      { label: '🟢 Low', id: '4', value: 4, name: 'low', color: '#d8d8d8' },
+      { label: 'None', id: '', value: null, name: '', color: '' },
+    ];
+
+    const selected = await vscode.window.showQuickPick(options, {
+      placeHolder: 'Select priority',
+    });
+    if (!selected) return;
+
+    try {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Updating priority to ${selected.value ? selected.name : 'none'}...`,
+          cancellable: false,
+        },
+        async () => {
+          await this.clickUpService.updateTaskPriority(taskId, selected.value);
+        }
+      );
+
+      const currentRef = getTaskReference(editor.document.uri.toString(), range);
+      if (currentRef) {
+        currentRef.priority = selected.value
+          ? { id: selected.id, priority: selected.name, color: selected.color }
+          : undefined;
+        currentRef.lastUpdated = new Date().toISOString();
+
+        saveTaskReference(editor.document.uri.toString(), currentRef);
+        fireChangeEvent();
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to change priority: ${error}`);
     }
   }
 
@@ -368,6 +419,7 @@ export class ClickUpCodeLensTasks {
       taskStatus: task.status || { status: 'Open', color: '#3b82f6' },
       assignee: task.assignees && task.assignees.length > 0 ? task.assignees[0] : undefined,
       assignees: task.assignees || [],
+      priority: task.priority ?? undefined,
       lastUpdated: new Date().toISOString(),
       // Include parent task info if this is a subtask
       parentTaskId: parentTask?.id,

@@ -30,6 +30,7 @@ export class BuildTaskRef {
       taskStatus: task.status,
       assignee: task.assignees?.[0],
       assignees: task.assignees,
+      priority: task.priority ?? undefined,
       lastUpdated: new Date().toISOString(),
       folderId: folder.id,
       folderName: folder.name,

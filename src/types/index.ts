@@ -95,6 +95,7 @@ export interface TaskReference {
   workspaceFolderPath?: string;
   assignee?: ClickUpUser;
   assignees?: ClickUpUser[];
+  priority?: ClickUpTask['priority'];
   parentTaskId?: string;
   parentTaskName?: string;
   description?: string;

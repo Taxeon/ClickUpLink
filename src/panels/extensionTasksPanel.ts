@@ -64,6 +64,13 @@ export function registerTaskCommands(
   ));
 
   context.subscriptions.push(vscode.commands.registerCommand(
+    'clickuplink.changePriority',
+    async (range: vscode.Range, taskId: string) => {
+      await codeLensProvider.changePriority(range, taskId);
+    }
+  ));
+
+  context.subscriptions.push(vscode.commands.registerCommand(
     'clickuplink.openInClickUp',
     async (taskId: string) => {
       await codeLensProvider.openInClickUp(taskId);
