@@ -1,4 +1,4 @@
-sessions# ClickUpLink
+# ClickUpLink
 
 What is ClickUpLink? A VS Code extension that provides seamless ClickUp task integration directly in your code editor with a dedicated sidebar panel and clickable breadcrumb navigation.
 
@@ -7,9 +7,9 @@ What is ClickUpLink? A VS Code extension that provides seamless ClickUp task int
 - **Dedicated Sidebar Panel**: ClickUp icon in VS Code's activity bar with Authentication, Workspace, and References views
 - **Simple Authentication**: Clear Step 1/Step 2 process with "Login" and "Enter Code" buttons in the sidebar
 - **Workspace Overview**: See your connected workspace and quick actions in the sidebar
-- **Insert Task References with a Hotkey**:  (`Alt+C+U`) 
-- **Or Use Single-line comments**: Use `//Clickup:[taskid]` (TypeScript, JavaScript, C#, Go), `#Clickup:[taskid]` (Python), `--Clickup:[taskid]` (SQL), or `'Clickup:[taskid]` (VB.Net).
-- **Or Use Block comments**: Insert `Clickup:[taskid]` Immediatly after the opening of the block comment `/*Clickup:[taskid] ... */`. Replace `[taskid]` with the actual ID of your ClickUp task. The extension will recognize this pattern and provide a link to the task.
+- **Insert Task References with a Hotkey**: `Alt+C+U` (hold Alt, press C then U)
+- **Or Use Single-line comments**: Use `// clickup:[taskid]` (TypeScript, JavaScript, C#, Go), `# clickup:[taskid]` (Python), `-- clickup:[taskid]` (SQL), `' clickup:[taskid]` (VB.Net), or `<!-- clickup:[taskid] -->` (Markdown).
+- **Or Use Block comments**: Insert `clickup:[taskid]` immediately after the opening of the block comment `/* clickup:[taskid] ... */`. Replace `[taskid]` with the actual ID of your ClickUp task. The extension will recognize this pattern and provide a link to the task.
 - **Breadcrumb Navigation**: Visual breadcrumbs showing Folder → List → Task → Status with clickable links
 - **Persistent References**: Task references survive VS Code reloads and are stored across sessions
 - **References Management**: View and navigate to all task references organized by file in the sidebar
@@ -17,20 +17,9 @@ What is ClickUpLink? A VS Code extension that provides seamless ClickUp task int
 
 ## 📦 Installation
 
-### Option 1: Command Line (Recommended)
-1. Download the `clickuplink-#.#.#.vsix` file from the GitHub release
-2. Open terminal/command prompt in your Downloads folder (or wherever you saved it)
-3. Run:
-```bash
-code --install-extension clickuplink-#.#.#.vsix
-```
+Install **ClickUpLink** from the VS Code Marketplace: open the Extensions panel (`Ctrl+Shift+X`), search for "ClickUpLink" and click Install.
 
-### Option 2: VS Code UI
-1. Download the `clickuplink-#.#.#.vsix` file from the GitHub release
-2. Open VS Code
-3. Go to Extensions panel (`Alt+Shift+X`)
-4. Click the "..." menu → "Install from VSIX..."
-5. Select the downloaded `clickuplink-#.#.#.vsix` file
+> ClickUpLink is an unofficial, community-built extension and is not affiliated with or endorsed by ClickUp. ClickUp is a trademark of its respective owner.
 
 ## 🎯 Getting Started
 
@@ -47,7 +36,7 @@ Click the ClickUpLink icon in VS Code's Activity Bar (left sidebar) to open the 
 7. The Authentication section will show "✅ Connected to ClickUp"
 
 ### 3. Add Task References
-- **Hotkey**: Place your cursor anywhere and press `Alt+C+U` (Windows/Linux) or `Alt+C+U` (Mac)
+- **Hotkey**: Place your cursor anywhere and press `Alt+C+U` (hold Alt, press C then U)
 - **Sidebar**: Click "Add Task Reference" in the Workspace section
 - Follow the prompts to select Folder → List → Task
 
@@ -59,10 +48,24 @@ After configuring a task reference, you'll see clickable breadcrumbs like:
 
 Each element is clickable to change folders, lists, tasks, or status.
 
+In code, the breadcrumbs sit above the `// clickup:` comment:
+
+![Breadcrumbs above a Go function's clickup comment](images/breadcrumbs-go.png)
+
+In Markdown, use an HTML comment so the reference stays invisible in the rendered page:
+
+![Breadcrumbs above a Markdown clickup comment](images/breadcrumbs-markdown.png)
+
+### 5. Browse All References
+The **Task References** view lists every reference in the workspace, grouped by file, with each task's status. Click one to jump to it.
+
+![Task References view grouped by file](images/references-pane.png)
+
+![Task References for a Go file](images/references-pane-files.png)
+
 ## ⌨️ Keyboard Shortcuts
 
-- `Alt+C+U` - Add task reference at cursor (Windows/Linux)
-- `Alt+C+U` - Add task reference at cursor (Mac)
+- `Alt+C+U` (hold Alt, press C then U) - Add task reference at cursor (Windows, Linux and Mac)
 
 ## Pizza Time
 
@@ -104,8 +107,8 @@ If you notice decreased performance with large numbers of references (1000+), co
 
 - OAuth tokens stored securely in VS Code's secret storage
 - Task references stored locally in VS Code's global state
-- No data transmitted to third parties
-- Only communicates with ClickUp API for task information
+- Only communicates with the ClickUp API for task information
+- The OAuth login/token exchange is routed through the ClickUpLink auth service (clickuplink.netlify.app), which keeps the ClickUp client secret off your machine; it does not store your tasks or code
 
 ## 📄 License
 

@@ -62,3 +62,5 @@ resources/Corel Auto-Preserve/**
 # Source maps (keep extension.js.map for debugging)
 out/**/*.map
 !out/extension.js.map
+# README screenshots (served from GitHub; not needed inside the package)
+images/**

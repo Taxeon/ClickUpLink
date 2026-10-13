@@ -1,9 +1,13 @@
 {
   "name": "clickuplink",
   "displayName": "ClickUpLink",
-  "description": "VSCode extension for ClickUp integration using React-inspired architecture.",
+  "description": "Link ClickUp tasks to your code. Clickable breadcrumbs, status, priority and assignee right in the editor.",
+  "keywords": ["clickup", "tasks", "task management", "project management", "codelens"],
+  "bugs": {
+    "url": "https://github.com/taxeon/ClickUpLink/issues"
+  },
   "version": "1.7.4",
-  "publisher": "clickuplink",
+  "publisher": "ActiveMindsGamesInc",
   "license": "GPL-3.0-or-later",
   "author": {
     "name": "Kenneth Romero (AMGameDev)"
@@ -15,7 +19,7 @@
   },
   "extensionDependencies": [],
   "extensionPack": [],
-  "icon": "resources/icon.png",
+  "icon": "resources/iconsquare.png",
   "galleryBanner": {
     "color": "#C80000",
     "theme": "dark"
@@ -34,7 +38,6 @@
       "supported": false
     }
   },
-  "browser": "./out/extension.js",
   "activationEvents": [
     "onStartupFinished",
     "onUri"
@@ -46,7 +49,7 @@
         {
           "id": "clickup-panel",
           "title": "ClickUpLink",
-          "icon": "resources/icon.png"
+          "icon": "resources/iconsquare.png"
         }
       ]
     },

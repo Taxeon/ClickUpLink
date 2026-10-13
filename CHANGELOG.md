@@ -5,6 +5,22 @@ All notable changes to the ClickUpLink extension will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.4] - 2026-10-13
+
+### Added
+- **Priority in Breadcrumbs**: Task priority is shown in the breadcrumbs and as a visual indicator in file references
+
+## [1.7.3] - 2025-09-19
+
+### Added
+- **Sprint Support**: Tasks can now be loaded from sprints
+
+## [1.7.2] - 2025-08-22
+
+### Fixed
+- **Go Compatibility**: Fixed task reference breadcrumbs in Go files
+- **Refresh**: Fixed refresh issues when documents change
+
 ## [1.7.1] - 2025-08-21
 
 ### Improved
